@@ -1499,6 +1499,17 @@ def _ci_python_versions() -> set[str]:
     return versions
 
 
+def test_ci_audits_the_locked_runtime_dependencies() -> None:
+    """TD-CI-017: a known CVE in a runtime dependency must fail CI."""
+    ci = _jobs(_workflow("ci.yml"))
+    assert "audit" in ci, "ci.yml needs a dependency-audit job"
+    audit = ci["audit"]
+    assert "uv export --frozen" in audit
+    assert "uvx pip-audit==" in audit  # pinned tool, not latest
+    assert "--no-deps" in audit
+    assert "--disable-pip" in audit
+
+
 def test_python_support_matches_the_ci_matrix() -> None:
     """TD-CI-012: the Python versions users are told about are the ones CI runs.
 

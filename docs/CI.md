@@ -27,7 +27,7 @@
 
 | 文件 | 触发条件 | 覆盖平台 | 是否自动发布 | 备注 |
 |---|---|---|---|---|
-| `.github/workflows/ci.yml` | `push` → `main`；`pull_request`（全部）；`workflow_dispatch` | ubuntu-24.04；测试矩阵另含 windows-latest、macos-latest | 否 | 基础门禁：ruff lint/format、mypy（默认 + win32 + darwin + scripts）、隐私检查、模型校验、shellcheck、desktop-file-validate；测试矩阵 Python 3.12 × 三 OS，外加 ubuntu 3.11/3.13 |
+| `.github/workflows/ci.yml` | `push` → `main`；`pull_request`（全部）；`workflow_dispatch` | ubuntu-24.04；测试矩阵另含 windows-latest、macos-latest | 否 | 基础门禁：ruff lint/format、mypy（默认 + win32 + darwin + scripts）、隐私检查、模型校验、shellcheck、desktop-file-validate；测试矩阵 Python 3.12 × 三 OS，外加 ubuntu 3.11/3.13；依赖漏洞审计 job（uv export + pinned pip-audit） |
 | `.github/workflows/bundle.yml` | `pull_request` / `push main`，路径过滤（`src/**`、`packaging/**`、`scripts/check_privacy.py` 等、`pyproject.toml`、`uv.lock`、构建相关 workflow）；`workflow_dispatch` | 复用 `build.yml`（Windows x64 / macOS arm64 / Linux x86_64） | 否（`upload: false`） | 发布前的打包冒烟：三平台构建 + 隐私 gate + 安装/升级/卸载冒烟 |
 | `.github/workflows/release.yml` | `push` tag `v*`；`workflow_dispatch` | 复用 `build.yml`（同上） | **是**：tag 触发即创建正式 GitHub Release（非 draft） | 版本 guard 在 `build.yml` 的 `prepare` job；`release` job 校验 5 个产物、生成 `SHA256SUMS.txt`、Sigstore 构建溯源、发布后触发 `pages.yml` |
 | `.github/workflows/pages.yml` | `push main`（`site/**`、`assets/**`、`scripts/build_site.py`、自身）；`release: published`；`workflow_dispatch` | ubuntu-24.04，GitHub Pages | 否（发布网站） | 构建 `site/` 并部署 Pages；发布后重建以更新下载链接 |
@@ -148,6 +148,9 @@ tag vX.Y.Z
   `build.yml` 的 `prepare` 校验 tag 必须指向 `origin/main` 的祖先，且 `__version__` 必须含
   纯数字版本（Windows/CFBundleVersion 需要）。
 - **发布方式未变**：仍为 tag 直接正式发布（非 draft），平台范围与签名行为保持原样（D11）。
+- **依赖漏洞审计（阶段 5 / TD-CI-017）**：`ci.yml` 的 `audit` job 用
+  `uv export --frozen --no-hashes --no-dev --no-group build` 导出锁定运行时依赖，
+  再由固定版本的 `pip-audit` 对照 OSV 审计；发现已知漏洞即红灯（本机基线：0 个已知漏洞）。
 - **覆盖率门禁（阶段 5 / D1）**：`pytest-cov` 基线 89 %，`fail_under = 89` 且只许上调；
   本地 `scripts/check.py` 的 pytest gate 默认执行覆盖率，CI 只在 ubuntu-24.04 / Python 3.12
   一个矩阵项加 `--cov`（其余保持速度），低于阈值即红灯。
@@ -179,6 +182,7 @@ tag vX.Y.Z
 | 隐私边界可拦截 | `tests/test_privacy.py`（既有 291 个参数化用例，含注入违规） |
 | 发布前测试门禁 / tag 在 main 上 / numeric 版本 | `tests/test_build_scripts.py::test_release_requires_the_test_suite_and_a_main_ancestor` |
 | 覆盖率低于阈值 | `pytest --cov` + `[tool.coverage.report].fail_under`（本地实测：注入未覆盖代码即失败） |
+| 依赖漏洞（TD-CI-017） | `ci.yml` audit job：`uv export` 锁定依赖 + pinned `pip-audit -r`（本地实测 0 已知漏洞） |
 
 ### 4.4 与现有配置的关系
 
