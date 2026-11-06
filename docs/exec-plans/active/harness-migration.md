@@ -516,8 +516,13 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
   settings_dialog 继续再导出这些名字，`__all__` 与测试导入入口不变；相机探测 patch 目标
   改指持有绑定的模块，诊断 lazy import 随 helper 移动（架构例外同步）。CI run
   [42164517742](https://github.com/likangjie110/eye-tracker/actions/runs/42164517742) 全绿。
+- **步骤 2（calibration 拆分）** `365cf22`：`ui/calibration_window.py` 1,767 → 997 行；拆出
+  `calibration_model.py`（196：颜色常量/绘制 helper/拟合逻辑/点位状态）/
+  `calibration_widgets.py`（327：`_Bar`/`_Spinner`/`_Card`/布局 helper）/
+  `calibration_surface.py`（371：每屏全屏 surface）。窗口继续再导出测试用名字，断言不变。CI run
+  [42165503750](https://github.com/likangjie110/eye-tracker/actions/runs/42165503750) 全绿。
 - 剩余 B3：`SettingsDialog` 类本身仍约 1,350 行（按页签拆子组件/presenter，TD-CPLX-002）；
-  `ui/calibration_window.py`（1,766）、`ui/tray.py`（702）、`ui/wizard.py`（998）待拆。
+  `CalibrationWindow` 类约 850 行；`ui/tray.py`（702）、`ui/wizard.py`（998）待拆。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
@@ -611,4 +616,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B2 | 步骤 5：linux 拆为 common/desktop/x11/dbus/camera，facade 2528→1100 行；测试 seam 按定义模块路由 | `5c6ccd5` | 行为不变（断言未改）；CI run `42162202129` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 6：macos 拆为 `macos_api`（439）+ `macos_platform`（835）+ 11 行 facade；B2 完成 | `f47bcc4` | 行为不变（断言未改；共享 helper 双模块 patch）；CI run `42163198344` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 1：settings_dialog 拆出 settings_status（220）+ hotkey_edit（342），facade 2029→1520；测试 seam 更新 | `5d14754` | 行为不变（公共导出与测试入口不变）；CI run `42164517742` 绿 |
+| 2026-11-06 | 阶段 4 · B3 | 步骤 2：calibration_window 拆出 model（196）/widgets（327）/surface（371），facade 1767→997；类本身待拆 | `365cf22` | 行为不变（测试未改）；CI run `42165503750` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
