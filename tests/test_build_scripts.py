@@ -704,7 +704,7 @@ def test_packages_are_built_and_tested_in_one_place() -> None:
     """
     release = _jobs(_workflow("release.yml"))
     bundle = _jobs(_workflow("bundle.yml"))
-    assert set(release) == {"build", "release"}
+    assert set(release) == {"test", "build", "release"}
     assert set(bundle) == {"build"}
     for job in (release["build"], bundle["build"]):
         assert f"    uses: {_BUILD_CALL}\n" in job
@@ -788,6 +788,18 @@ def test_workflow_runs_are_grouped() -> None:
         text = _workflow(name)
         assert "\nconcurrency:\n  group: ${{ github.workflow }}-" in text, name
         assert f"\n  cancel-in-progress: {cancel}\n" in text, name
+
+
+def test_release_requires_the_test_suite_and_a_main_ancestor() -> None:
+    """TD-CI-001/003: a tag must be tested before publishing and point at main."""
+    release = _jobs(_workflow("release.yml"))
+    assert "test" in release, "release.yml needs a test job"
+    assert "pytest" in release["test"]
+    assert "needs: test" in release["build"]
+    prepare = _jobs(_workflow("build.yml"))["prepare"]
+    assert "fetch-depth: 0" in prepare
+    assert "merge-base --is-ancestor" in prepare
+    assert "cannot read a numeric version" in prepare
 
 
 def test_release_builds_pass_the_bundle_privacy_gate() -> None:

@@ -21,7 +21,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test:
+    name: Test the tagged commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run the test suite
+        run: uv run --no-sync pytest -q
+
   build:
+    name: Build
+    needs: test
     name: Build
     uses: ./.github/workflows/build.yml
     permissions:

@@ -72,6 +72,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The release guard checks that the tag commit is on main.
+          fetch-depth: 0
 
       - name: Read the version
         id: version
@@ -87,6 +89,10 @@ jobs:
           fi
           # Windows file versions and CFBundleVersion must be purely numeric.
           numeric="$(grep -oE '^[0-9]+(\.[0-9]+){0,2}' <<<"$version")"
+          if [[ -z "$numeric" ]]; then
+            echo "::error file=src/eye_tracker/__init__.py::cannot read a numeric version from \"$version\""
+            exit 1
+          fi
           prerelease=false
           if [[ "$version" =~ [a-zA-Z] ]]; then
             prerelease=true
@@ -97,6 +103,15 @@ jobs:
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
           echo "Version $version (numeric $numeric, prerelease $prerelease)"
+
+      - name: Require a release tag to be on the main branch
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME points at a commit that is not on main"
+            exit 1
+          fi
 
       - name: Extract the release notes from CHANGELOG.md
         env:
