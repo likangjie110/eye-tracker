@@ -239,3 +239,44 @@ def test_download_can_be_cancelled(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         )
     assert response.closed
     assert response._pos == 20
+
+
+def test_download_has_an_overall_deadline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fetch, "CHUNK_BYTES", 10)
+    monkeypatch.setattr(fetch, "MAX_DOWNLOAD_S", 10.0)
+    response = FakeResponse(body=b"x" * 20)
+    transport = FakeTransport({("github.com", "/f"): response})
+    ticks = iter([0.0, 100.0, 100.0])
+    with pytest.raises(NetworkError, match="took too long"):
+        Fetcher(transport).download(
+            "https://github.com/f", tmp_path / "f", max_bytes=100, clock=lambda: next(ticks)
+        )
+
+
+def test_download_fails_when_the_rate_stays_below_the_minimum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fetch, "CHUNK_BYTES", 10)
+    monkeypatch.setattr(fetch, "RATE_WINDOW_S", 5.0)
+    monkeypatch.setattr(fetch, "MIN_RATE_BYTES_S", 1000)
+    response = FakeResponse(body=b"x" * 20)
+    transport = FakeTransport({("github.com", "/f"): response})
+    ticks = iter([0.0, 5.0])
+    with pytest.raises(NetworkError, match="too slow"):
+        Fetcher(transport).download(
+            "https://github.com/f", tmp_path / "f", max_bytes=100, clock=lambda: next(ticks)
+        )
+
+
+def test_download_within_the_limits_still_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fetch, "CHUNK_BYTES", 10)
+    monkeypatch.setattr(fetch, "MAX_DOWNLOAD_S", 60.0)
+    response = FakeResponse(body=b"x" * 20)
+    transport = FakeTransport({("github.com", "/f"): response})
+    ticks = iter([0.0, 1.0, 2.0])
+    size = Fetcher(transport).download(
+        "https://github.com/f", tmp_path / "f", max_bytes=100, clock=lambda: next(ticks)
+    )
+    assert size == 20
