@@ -30,7 +30,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from ..config import Settings
-from ..engine.controller import effective_away_action
+from ..engine.presence import effective_away_action
 from ..types import Rect, TrackingState, monitor_at
 from . import util
 

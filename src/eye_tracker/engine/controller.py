@@ -133,7 +133,13 @@ from .camera_yield import YieldInputs, should_yield
 from .decision import Decision, SwitchConfig, SwitchDecider
 from .guard import GuardConfig, ShoulderGuard
 from .input_state import InputTracker
-from .presence import PresenceConfig, PresenceEvent, PresenceMonitor, PresenceState
+from .presence import (
+    PresenceConfig,
+    PresenceEvent,
+    PresenceMonitor,
+    PresenceState,
+    effective_away_action,
+)
 from .scheduler import PROFILES, RateContext, RatePolicy
 from .window_memory import WindowMemory, choose_cursor_target
 
@@ -253,23 +259,6 @@ PANE_REFRESH_S = 1.0
 PANE_JOIN_TIMEOUT_S = 2.0
 #: Windows whose pane cursor positions are remembered (least recently used dropped).
 PANE_CURSOR_WINDOWS = 16
-#: Walk-away actions that lock the session or blank the displays. Until the
-#: first-run setup is finished they only notify: the owner of a PC who never
-#: saw the setup assistant must not be locked out by an app they just installed.
-_DISRUPTIVE_AWAY_ACTIONS = frozenset({"lock", "lock_and_display_off", "display_off"})
-
-
-def effective_away_action(settings: Settings) -> str:
-    """The walk-away action that really runs: ``settings.presence.action``, except
-    that a lock or blanked displays only notify while the first-run setup is not
-    finished (see ``_DISRUPTIVE_AWAY_ACTIONS``). The countdown toast announces this
-    one, so it never says "Locking" before a mere notification."""
-    action = settings.presence.action
-    if not settings.general.first_run_done and action in _DISRUPTIVE_AWAY_ACTIONS:
-        return "notify"
-    return action
-
-
 #: IPC commands handled by :meth:`Controller.handle_command`.
 COMMANDS = (
     "show",

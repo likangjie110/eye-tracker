@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..config import PresenceSettings
+    from ..config import PresenceSettings, Settings
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,22 @@ INPUT_EVIDENCE_S = 1.5
 #: when ``warning_s >= away_timeout_s``; otherwise a single frame without a
 #: detected face would flash the countdown.
 MIN_ABSENCE_BEFORE_WARNING_S = 1.0
+
+#: Away actions that take the session away from the user. Before the first-run
+#: setup is finished they only notify, so a misconfigured first run cannot lock
+#: someone out of the assistant that would fix it.
+DISRUPTIVE_AWAY_ACTIONS = frozenset({"lock", "lock_and_display_off", "display_off"})
+
+
+def effective_away_action(settings: Settings) -> str:
+    """The walk-away action that really runs: ``settings.presence.action``, except
+    that a lock or blanked displays only notify while the first-run setup is not
+    finished (see :data:`DISRUPTIVE_AWAY_ACTIONS`). The countdown toast announces
+    this one, so it never says "Locking" before a mere notification."""
+    action = settings.presence.action
+    if not settings.general.first_run_done and action in DISRUPTIVE_AWAY_ACTIONS:
+        return "notify"
+    return action
 
 
 class PresenceState(enum.Enum):

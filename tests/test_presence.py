@@ -6,13 +6,14 @@ import math
 
 import pytest
 
-from eye_tracker.config import PresenceSettings
+from eye_tracker.config import PresenceSettings, Settings
 from eye_tracker.engine.presence import (
     INPUT_EVIDENCE_S,
     PresenceConfig,
     PresenceEvent,
     PresenceMonitor,
     PresenceState,
+    effective_away_action,
 )
 
 IDLE = 999.0  # seconds since input: nobody touched anything
@@ -219,3 +220,19 @@ def test_config_from_settings() -> None:
         enabled=False, away_timeout_s=90.0, warning_s=5.0, require_input_idle=False
     )
     assert PresenceConfig.from_settings(PresenceSettings()) == PresenceConfig()
+
+
+def test_effective_away_action_notifies_before_first_run() -> None:
+    settings = Settings()
+    settings.general.first_run_done = False
+    for action in ("lock", "lock_and_display_off", "display_off"):
+        settings.presence.action = action
+        assert effective_away_action(settings) == "notify"
+
+
+def test_effective_away_action_after_first_run() -> None:
+    settings = Settings()
+    settings.general.first_run_done = True
+    for action in ("none", "notify", "display_off", "lock", "lock_and_display_off"):
+        settings.presence.action = action
+        assert effective_away_action(settings) == action
