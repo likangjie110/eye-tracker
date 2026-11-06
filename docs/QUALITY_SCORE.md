@@ -19,7 +19,7 @@ Snapshot: 2026-11-06, `harnessing` branch, code `v0.3.0` + phases 1–3 and B1 s
 | gaze (`gaze/`) | 5 | 4 | 3 | 5 | 3 | **4.0** | `GazeModel.from_dict` 27 decision points (TD-CPLX-011); no coverage numbers (TD-TEST-001) |
 | engine, pure rules (`engine/` minus controller) | 5 | 4 | 3 | 5 | 3 | **4.0** | three `update()` state machines 87–108 lines (TD-CPLX-009) |
 | orchestration (`engine/controller.py`, `app.py`, `ipc.py`) | 3 | 5 | 1 | 3 | 3 | **3.0** | controller 3,429 lines / 155 methods (TD-CPLX-001); B1 removed the app↔cli cycle and the UI→controller import |
-| platform (`platform/`) | 4 | 4 | 2 | 3 | 3 | **3.2** | hotkeys 2,740 lines with three OSes (TD-CPLX-003); `hotkeys → cli` (TD-ARCH-004); real native paths only on their OS |
+| platform (`platform/`) | 4 | 4 | 3 | 3 | 3 | **3.4** | hotkey backends split into 151-line facade + four modules (B2); `linux.py` / `windows.py` / `macos.py` still large; real native paths only on their OS |
 | panes (`panes/`) | 4 | 4 | 4 | 3 | 3 | **3.6** | `panes.decider → engine.reading` (TD-ARCH-001); duplicated guard (TD-DUP-001) |
 | UI (`ui/`) | 2 | 3 | 1 | 3 | 3 | **2.4** | 25.2 tests/1k lines (others 74–133); `settings_dialog.py` 2,029 / `calibration_window.py` 1,766 lines; B1 removed UI→cli and UI→controller |
 | update and release (`update/`, `packaging/`, `.github/`) | 4 | 4 | 4 | 4 | 4 | **4.0** | `winhttp.py` zero behaviour tests (TD-TEST-002); unsigned installer execution (TD-SEC-001); release not test-gated (TD-CI-001) |

@@ -17,7 +17,7 @@
 | 类别 | 条目数 | P0 | P1 | P2 |
 |---|---:|---:|---:|---:|
 | ARCH（架构） | 6 | 0 | 3 | 3 |
-| CPLX（复杂度） | 12 | 0 | 7 | 5 |
+| CPLX（复杂度） | 13 | 0 | 7 | 6 |
 | DUP（重复） | 2 | 0 | 0 | 2 |
 | DOC（文档） | 16 | 0 | 5 | 11 |
 | TEST（测试） | 16 | 0 | 4 | 12 |
@@ -25,7 +25,7 @@
 | PERF（性能/可靠性） | 4 | 0 | 0 | 4 |
 | CI（门禁/流水线） | 33 | 0 | 1 | 32 |
 | META（过程/元） | 2 | 0 | 0 | 2 |
-| **合计** | **105** | **0** | **21** | **84** |
+| **合计** | **106** | **0** | **21** | **85** |
 
 归并规则：三份原始审计共 97 条（CI 51 / 测试与文档 29 / 安全 17），与机械扫描、人工复核合并后
 按**同一根因**归并为 105 条（含少量本次新增）；原始报告完整归档在
@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|---|---|---|
 | TD-CPLX-001 | `engine/controller.py` 超大：单类 2,845 行 / 155 方法 | `engine/controller.py:585` | P1 | 文件 3,429 行；`Controller.__init__` 206 行（`:659`）；`start` 75 行（`:867`）；`apply_settings` 63 行（`:1237`） | 先补特征测试；按生命周期抽取协作对象（相机/会话、热键、窗口记忆、更新），controller 只保留编排 | 无（重构） | B1；controller 行数下降 ≥30%，测试全绿 | 处理中（B1 进行中：controller.py 3418→3073，Controller 类 2845→2751） |
 | TD-CPLX-002 | `ui/settings_dialog.py` 超大：单类 1,351 行 / 69 方法 | `ui/settings_dialog.py:669` | P1 | 文件 2,029 行；`SettingsDialog` 69 方法；UI 测试仅 ~29 例 | 按页签拆子组件（General/Camera/Privacy/Hotkeys…），状态读写集中到 presenter | 无 | B3；类行数 <600，offscreen 测试全绿 | 未开始 |
-| TD-CPLX-003 | `platform/hotkeys.py` 2,740 行装三平台实现 | `platform/hotkeys.py`（`_Carbon:1499`、`X11HotkeyManager:2257`、Windows 类 ~955） | P1 | 文件 2,740 行；`register` 62 行 / 17 决策点（`:498`）；Windows `__init__` 81 行（`:955`） | 拆 `hotkeys/{windows,macos,x11,base}.py`，公共解析/格式化留一处 | 无 | B2；三平台测试全绿；文件 <600 行 | 处理中（B2：hotkeys.py 2740→1297；Windows/macOS 后端待拆） |
+| TD-CPLX-003 | `platform/hotkeys.py` 2,740 行装三平台实现 | `platform/hotkeys.py`（`_Carbon:1499`、`X11HotkeyManager:2257`、Windows 类 ~955） | P1 | 文件 2,740 行；`register` 62 行 / 17 决策点（`:498`）；Windows `__init__` 81 行（`:955`） | 拆 `hotkeys/{windows,macos,x11,base}.py`，公共解析/格式化留一处 | 无 | B2；三平台测试全绿；文件 <600 行 | 已完成（阶段 4 B2，2026-11-06） |
 | TD-CPLX-004 | `platform/linux.py` 超大：`LinuxPlatform` 945 行 / 53 方法 | `platform/linux.py:1580` | P1 | 文件 2,528 行；`_EwmhClient` 273 行 / 24 方法（`:707`）；`capabilities` 33 行 / 18 决策点（`:1708`） | 拆 X11 窗口管理 / 光标 / DPMS / 热键后端；Wayland 分支单独文件 | 无 | B2；Linux 测试全绿 | 未开始 |
 | TD-CPLX-005 | `ui/calibration_window.py` 超大：类 849 行 / 52 方法 | `ui/calibration_window.py:918` | P1 | 文件 1,766 行；`_Surface` 315 行（`:600`）；`set_running` 47 行 / 19 决策点（`:664`） | 拆校准状态机（可测纯逻辑）与渲染 surface；采集/拟合/结果分文件 | 无 | B3；UI 测试补校准失败/重试路径 | 未开始 |
 | TD-CPLX-006 | `vision/backends/facemesh_backend.py` 1,454 行，`process` 77 行 / 25 决策点 | `facemesh_backend.py:759`、`:921` | P1 | 类 692 行 / 25 方法；`process` 25 决策点；模型加载自检逻辑同文件 | 拆“模型加载/自检”“单帧推理”“后处理”；保持帧循环接口不变 | 无 | B4；bench 前后数值不退化 | 未开始 |
@@ -63,6 +63,7 @@
 | TD-CPLX-010 | `parse_face_geometry` 嵌套 7 层 | `vision/backends/face_geometry.py:108` | P2 | 43 行、24 决策点、max nesting=7 | 每层解析拆函数，失败返回结构化错误；模型包格式测试锁定 | 无 | B4；嵌套 ≤3 | 未开始 |
 | TD-CPLX-011 | `GazeModel.from_dict` 64 行 / 27 决策点 | `gaze/model.py:478`；类在 `:203` | P2 | 机械扫描；旧模型兼容分支集中在一个函数 | 按版本/字段逐项解析，未知字段策略显式化；旧文件回归测试 | 无 | B5；旧校准文件测试全绿 | 未开始 |
 | TD-CPLX-012 | `config._coerce` 36 行 / 22 决策点 | `config.py:588` | P2 | 机械扫描 | 每种设置类型的强制转换表驱动；非法值回归测试 | 无 | B1；测试全绿 | 未开始 |
+| TD-CPLX-013 | 热键模块拆分后仍有 3 个文件 >600 行 | `hotkeys_base.py` 823、`hotkeys_macos.py` 722、`hotkeys_x11.py` 698 | P2 | 机械扫描；这是 B2 从 2,740 行拆分后的自然结果 | 按职责再拆（例如 base 的解析 vs 管理器记账；macOS 的 Carbon 绑定 vs 布局探测）；优先级低于其他批次 | 无 | B2 后续；文件降到 600 以下 | 未开始 |
 
 ## DUP · 重复
 
