@@ -1,0 +1,37 @@
+== ruff check ==
+All checks passed!
+exit=0
+
+== ruff format --check ==
+159 files already formatted
+exit=0
+
+== mypy ==
+Success: no issues found in 76 source files
+exit=0
+
+== mypy win32 ==
+Success: no issues found in 76 source files
+exit=0
+
+== mypy darwin ==
+Success: no issues found in 76 source files
+exit=0
+
+== mypy scripts ==
+scripts/analysis/scan_metrics.py:380: error: Unsupported operand type for unary - ("object")  [operator]
+scripts/analysis/scan_metrics.py:535: error: Incompatible types in assignment (expression has type "list[str]", variable has type "str")  [assignment]
+Found 11 errors in 1 file (checked 8 source files)
+exit=0
+
+== privacy check ==
+allowed: update/winhttp.py: 16 native-network finding(s): the opt-in update check (off by default): one HTTPS GET a day to GitHub's release address through Windows' own WinHTTP, with the host and the size of every request checked by update/fetch.py; sends no identifier
+check_privacy: OK: 76 files in src/eye_tracker; no network or frame-writing code found.
+exit=0
+
+== models check ==
+  ok       face_landmarker.task -> face_landmarks_detector.tflite, geometry_pipeline_metadata_landmarks.binarypb (2.5 MiB, sha256 verified)
+  ok       face_detection_yunet_2023mar.onnx (227.1 KiB, sha256 verified)
+  licence  licenses/LICENSE-APACHE-2.0.txt (sha256 verified)
+  licence  licenses/LICENSE-YUNET.txt (sha256 verified)
+exit=0

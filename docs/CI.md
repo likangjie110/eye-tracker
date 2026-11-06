@@ -1,0 +1,123 @@
+# CI 配置决定
+
+> 本文件由 harness 工程化改造阶段 1 建立，记录**框架判定结果**与**现有 CI 现状**。
+> 交互询问（Tauri 专用）不适用，原因见 §3；阶段 3 的门禁改造在此追加 §4。
+
+## 1. 框架判定
+
+- **判定结果：其他类型（非 Tauri）**
+- **判定日期：2026-11-06**
+- **判定依据（§3.2 机械判定）**：
+  - `src-tauri/tauri.conf.json` —— 不存在
+  - `src-tauri/Cargo.toml`（依赖中含 `tauri`）—— 不存在
+  - 根 `package.json`（依赖含 `@tauri-apps/cli` / `@tauri-apps/api`）—— 不存在
+  - 实际形态：Python src-layout 桌面应用
+    - `pyproject.toml`：`build-backend = "hatchling.build"`，`requires-python = ">=3.11,<3.15"`
+    - 入口：`project.scripts.eye-tracker = "eye_tracker.cli:main"`、
+      `project.gui-scripts.eye-tracker-gui = "eye_tracker.cli:gui_main"`
+    - 打包：PyInstaller（`packaging/pyinstaller/eye-tracker.spec`）+ 各平台安装器
+      （Windows Inno Setup、macOS dmg、Linux AppImage）
+- **结论**：按 §3.4 步骤 F3 处理——不进入 §3.3 的 Tauri 三问，不生成 Tauri 多平台
+  打包流水线模板；现有 CI **只审计、不删除**。基础门禁（lint / test / build）仍按
+  §5 阶段 3 建立与加强。
+
+## 2. 现有 CI 现状（存量项目必填）
+
+### 2.1 workflow 清单
+
+| 文件 | 触发条件 | 覆盖平台 | 是否自动发布 | 备注 |
+|---|---|---|---|---|
+| `.github/workflows/ci.yml` | `push` → `main`；`pull_request`（全部）；`workflow_dispatch` | ubuntu-24.04；测试矩阵另含 windows-latest、macos-latest | 否 | 基础门禁：ruff lint/format、mypy（默认 + win32 + darwin + scripts）、隐私检查、模型校验、shellcheck、desktop-file-validate；测试矩阵 Python 3.12 × 三 OS，外加 ubuntu 3.11/3.13 |
+| `.github/workflows/bundle.yml` | `pull_request` / `push main`，路径过滤（`src/**`、`packaging/**`、`scripts/check_privacy.py` 等、`pyproject.toml`、`uv.lock`、构建相关 workflow）；`workflow_dispatch` | 复用 `build.yml`（Windows x64 / macOS arm64 / Linux x86_64） | 否（`upload: false`） | 发布前的打包冒烟：三平台构建 + 隐私 gate + 安装/升级/卸载冒烟 |
+| `.github/workflows/release.yml` | `push` tag `v*`；`workflow_dispatch` | 复用 `build.yml`（同上） | **是**：tag 触发即创建正式 GitHub Release（非 draft） | 版本 guard 在 `build.yml` 的 `prepare` job；`release` job 校验 5 个产物、生成 `SHA256SUMS.txt`、Sigstore 构建溯源、发布后触发 `pages.yml` |
+| `.github/workflows/pages.yml` | `push main`（`site/**`、`assets/**`、`scripts/build_site.py`、自身）；`release: published`；`workflow_dispatch` | ubuntu-24.04，GitHub Pages | 否（发布网站） | 构建 `site/` 并部署 Pages；发布后重建以更新下载链接 |
+| `.github/workflows/build.yml` | `workflow_call`（被 `bundle.yml` / `release.yml` 调用） | Windows x64 / macOS arm64 / Linux x86_64 | 由调用方决定 | 33 KB 可复用工作流：`prepare`（版本 guard + CHANGELOG 发布说明）+ 三个平台构建 job，含隐私 gate、冒烟测试、可选 macOS 签名 |
+
+### 2.2 已有发布链路现状
+
+```
+tag vX.Y.Z
+  └─ release.yml (push tag)
+       └─ build.yml (workflow_call, upload: true)
+            ├─ prepare: 读 src/eye_tracker/__init__.py 的 __version__
+            │            guard: GITHUB_REF_NAME == "v$version"，否则 fail
+            │            生成 numeric 版本 / prerelease 标记 / 从 CHANGELOG.md 抽取发布说明
+            ├─ build-windows (windows-latest, 60 min): PyInstaller → 安装器/便携 ZIP → 冒烟
+            ├─ build-macos   (macos-14, 60 min): PyInstaller → 可选签名 → dmg → 冒烟
+            └─ build-linux   (ubuntu-22.04, 60 min): PyInstaller → AppImage/tar.gz → 冒烟
+       └─ release job: 校验 5 个产物存在 → SHA256SUMS.txt → Sigstore attestation
+                       → softprops/action-gh-release 创建正式 Release
+                       → 触发 pages.yml 重建网站
+```
+
+- **版本单一事实源**：`src/eye_tracker/__init__.py` 的 `__version__`（hatchling 动态读取，
+  `pyproject.toml` 不再重复声明）。tag 与版本不一致时 `prepare` 直接失败——已有机械 guard。
+- **发布方式**：tag 推送后**直接正式发布**，不使用 draft；发布说明来自 `CHANGELOG.md`。
+- **平台覆盖**：Windows 10/11 x64、macOS 14+ Apple silicon（arm64）、Linux x86_64。
+  与 `docs/platform-support.md`、README 的下载表一致；Intel Mac 明确为“从源码运行”。
+- **签名**：macOS 可选证书（仓库 secrets 缺失时 ad hoc 签名）；Windows 无代码签名
+  （`docs/platform-support.md` 有说明）。
+- **依赖与供应链**：三方 Actions 全部按 commit SHA pin（带 `# vX.Y.Z` 注释），Dependabot
+  同时维护 SHA 与版本注释；workflow `permissions` 最小化（默认 `contents: read`）。
+
+### 2.3 本地可复现性现状
+
+`CONTRIBUTING.md` 的 "Checks" 节已把 CI 的主门禁写成可复制命令；本地实测（2026-11-06）：
+
+| 门禁 | 本地命令 | 现状 |
+|---|---|---|
+| Ruff lint | `uv run ruff check .` | ✅ 通过 |
+| Ruff format | `uv run ruff format --check .` | ✅ 通过（159 files） |
+| Mypy（默认） | `uv run mypy` | ✅ 通过（76 source files） |
+| Mypy（Windows 视角） | `uv run mypy --platform win32` | ✅ 通过 |
+| Mypy（macOS 视角） | `uv run mypy --platform darwin` | ✅ 通过 |
+| Mypy（脚本/打包） | `uv run mypy scripts packaging/pyinstaller/entry.py` | ✅ 通过 |
+| 隐私检查 | `uv run python scripts/check_privacy.py` | ✅ 通过（76 files，仅允许 update/winhttp.py） |
+| 模型校验 | `uv run python scripts/fetch_models.py --check` | ✅ 通过（sha256 verified） |
+| 测试 | `uv run pytest -q` | ✅ 2952 passed / 55 skipped（35.59 s，2026-11-06 本机） |
+| 配置文档同步 | `uv run python scripts/gen_config_docs.py --check`（`tests/test_docs.py` 内） | ✅ 通过 |
+| 打包脚本 lint | `shellcheck` + `desktop-file-validate`（CI 安装工具后跑） | ⚠️ 本机未验证（工具未安装，CONTRIBUTING 也未给命令） |
+| Windows 安装/升级/卸载冒烟 | —— | ❌ CI-only：`build.yml:303-425` 内联 PowerShell，无本地脚本 |
+| 发布校验 / attestation / 建 Release | —— | ❌ CI-only（设计使然，不可本地复现） |
+| 覆盖率 | —— | ❌ 无覆盖率工具、无覆盖率门禁 |
+| 本地提交钩子 | —— | ❌ 无 pre-commit / lefthook / husky，靠人工执行 |
+
+> 说明：`ci.yml` 的 `lint` job 只跑在 ubuntu-24.04；平台专属类型检查通过
+> `mypy --platform win32/darwin` 在同一 job 内覆盖，属已有优势。
+> 覆盖率与提交钩子是阶段 3 / 阶段 5 的待建项，见
+> `docs/exec-plans/active/harness-migration.md`。
+
+### 2.4 阶段 1 CI 审计结论（摘要，完整 51 条见台账）
+
+- **P1（唯一）**：发布链路不依赖测试门禁。tag push 只触发 `release.yml`；`ci.yml` 的 push
+  仅监听 `main`/PR；`build.yml` 与 `release.yml` 均不跑 pytest。打 tag 即可发布未经测试套件
+  验证的提交。
+- **发布方式**：tag 直接创建正式 Release（非 draft），无 protected environment/审批；
+  `workflow_dispatch` 选择 tag ref 时也会走发布 job（与 `release.yml:5-6` 注释矛盾）；
+  tag 可指向任意 commit，无“必须在 main 上”的检查。
+- **可复现性**：Windows 安装/升级/卸载冒烟、release 校验/attestation 无法本地复现；
+  `shellcheck` / `desktop-file-validate` 无本地命令；无覆盖率、依赖漏洞、secret 扫描。
+- **可复现性细节**：测试用 `macos-latest` 而发布固定 `macos-14`；Windows runner 浮动；
+  ci 用 uv 托管的 Python、build 用 `setup-python`；ci 的 `uv sync` 未显式传 matrix Python。
+- **正面基线**（无需改）：26 条外部 `uses:` 全部 40 位 SHA + 版本注释 pin；默认
+  `permissions: contents: read`；无 `pull_request_target`；所有 checkout `persist-credentials:
+  false`；隐私 gate 源码 + bundle 双重执行；`build.yml` 为唯一构建定义，并有 guard 测试。
+- 相关人工决策：D11（发布门禁/方式）、D12（分支保护与 secrets 是否配置）、D13（CI 成本）。
+
+## 3. 交互确认记录（仅 Tauri 填写）
+
+**不适用。** 按 §3.2 判定为“其他类型”，按 §3.4 不进入 §3.3 三问流程；
+用户在阶段 3 不需要回答“是否生成 GitHub CI / 目标平台 / Release 发布方式”三问。
+现有打包发布流水线**保留现状**，阶段 3 只做审计与门禁加强，不重建、不删除。
+
+## 4. 落地说明（阶段 3 填写）
+
+- 现状：见 §2，阶段 1 不改任何 workflow。
+- 阶段 3 计划：在现有 `ci.yml` 上增量增加覆盖率/结构检查等门禁（不新建打包流水线），
+  具体差异与验证方式届时写入本节，并记录变更历史。
+
+## 5. 变更历史
+
+| 日期 | 变更 | 原因 |
+|---|---|---|
+| 2026-11-06 | 建立本文件：框架判定 = 其他；记录现有 5 个 workflow 与发布链路 | harness 阶段 1（§3.2 / 附录 C） |
