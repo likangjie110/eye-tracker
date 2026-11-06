@@ -681,4 +681,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 债务清理 · 测试质量 | TD-TEST-004/010/013 关闭、005/006 收窄：具体断言、`python -m` 入口 smoke、pytest strict + 120 s 超时 | 待提交 | 3086 passed / 55 skipped |
 | 2026-11-06 | 债务清理 · 工具/供应链 | TD-SEC-010（fetch_models 默认 verify-only）、TD-CI-030（ruff 重复 ignore）关闭 | 待提交 | 默认不联网有测试；ruff 全绿 |
 | 2026-11-06 | 债务清理 · CI/文档 | TD-CI-011（lint 不装 build 组）、TD-DOC-015（CONTRIBUTING 命令去重）关闭 | 待提交 | lint job 更轻；文档三角色分工明确 |
+| 2026-11-06 | 债务清理 · 测试/文档 | TD-TEST-011（overlay 直测）、TD-DOC-011（双 README 性能数值漂移门禁）关闭 | 待提交 | 10 个新 overlay 用例；文档门禁 21 用例 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
