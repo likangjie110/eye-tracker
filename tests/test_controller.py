@@ -14,7 +14,7 @@ import sys
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
@@ -36,6 +36,7 @@ from eye_tracker.panes.registry import PaneRegistry
 from eye_tracker.panes.types import Pane, PaneSnapshot
 from eye_tracker.panes.worker import DetectResult, PaneWorker
 from eye_tracker.platform.base import PlatformServices
+from eye_tracker.platform.hotkeys import HotkeyManager
 from eye_tracker.types import (
     AppIdentity,
     Monitor,
@@ -168,7 +169,7 @@ class FakePlatform(PlatformServices):
         self.lock_ok = True
         self.activate_ok = True
         self.cursor_reliable = True
-        self.accessibility: str | None = None  # None: not applicable (not macOS)
+        self.accessibility: str = ""  # empty: not applicable (not macOS)
         self.camera_permission: bool | None = None
         self.background: list[bool] = []
         # Split panes: the application of each window handle, and the capability.
@@ -243,7 +244,7 @@ class FakePlatform(PlatformServices):
     def permissions(self) -> dict[str, bool | None]:
         return {"camera": self.camera_permission, "accessibility": None}
 
-    def accessibility_status(self) -> str | None:
+    def accessibility_status(self) -> str:
         return self.accessibility
 
     def set_background_activity(self, active: bool) -> bool:
@@ -423,7 +424,7 @@ def make_controller(qapp: Any, app_dirs: Any) -> Iterator[Callable[..., Harness]
             monitors_provider=lambda: list(monitors),
             cursor=cursor,
             clock=clock,
-            hotkey_manager_factory=lambda: hotkeys,
+            hotkey_manager_factory=lambda: cast(HotkeyManager, hotkeys),
             # Screen locks run on a thread in the app; synchronously here unless
             # a test is about that thread.
             lock_runner=None if threaded_locks else run_now,
@@ -1314,10 +1315,16 @@ def test_default_factories_build_but_do_not_open(qapp: Any) -> None:
     assert source.fps == 15
     assert not source.is_open
     s.performance.profile = "responsive"
-    assert controller_module._source_factory(s)().fps == 30
+    responsive = controller_module._source_factory(s)()
+    assert isinstance(responsive, Camera)
+    assert responsive.fps == 30
 
     worker = controller_module._make_vision_worker(
-        lambda: source, lambda: None, lambda _o: None, lambda _s: None, lambda _f: None
+        lambda: source,
+        lambda: cast(Any, None),
+        lambda _o: None,
+        lambda _s: None,
+        lambda _f: None,
     )
     assert isinstance(worker, VisionWorker)
     assert not worker.is_running
@@ -1363,9 +1370,9 @@ def test_platform_property_and_hotkey_suspension(qapp, app_dirs) -> None:
     controller = Controller(
         Settings(),
         platform,
-        worker_factory=_Worker,
+        worker_factory=cast(Any, _Worker),
         monitors_provider=lambda: [],
-        hotkey_manager_factory=lambda: manager,
+        hotkey_manager_factory=lambda: cast(HotkeyManager, manager),
     )
     try:
         controller.start()
@@ -3265,10 +3272,10 @@ def test_detections_from_before_a_provider_swap_are_dropped(
     h.controller.apply_settings(swapped)
     assert h.controller._pane_snapshot is None
     # An answer to a request made with the old providers arrives late: ignored.
-    h.controller._on_pane_detected(DetectResult(TERMINAL.handle, snapshot, before))
+    h.controller._on_pane_detected(DetectResult(TERMINAL.handle, snapshot, int(before)))
     assert h.controller._pane_snapshot is None
     # The next request's answer counts.
-    h.controller._on_pane_detected(DetectResult(TERMINAL.handle, snapshot, before + 1))
+    h.controller._on_pane_detected(DetectResult(TERMINAL.handle, snapshot, int(before) + 1))
     assert h.controller._pane_snapshot is snapshot
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+from typing import Any
 
 import pytest
 
@@ -27,7 +28,7 @@ class FakeWinHTTP:
     """A fake WinHTTP library that records calls and can fail at any step."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, object]] = []
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.closed: list[int] = []
         self.fail_open = False
         self.fail_timeouts = False
@@ -79,9 +80,9 @@ class FakeWinHTTP:
         request: int,
         level: int,
         name: object,
-        buffer: object,
-        size: object,
-        index: object,
+        buffer: Any,
+        size: Any,
+        index: Any,
     ) -> bool:
         self._call("QueryHeaders", request, level)
         if self.fail_query:
@@ -99,7 +100,7 @@ class FakeWinHTTP:
         ctypes.cast(buffer, ctypes.POINTER(ctypes.c_wchar * 2048)).contents.value = self.location
         return True
 
-    def WinHttpReadData(self, request: int, buffer: object, size: int, read: object) -> bool:
+    def WinHttpReadData(self, request: int, buffer: Any, size: int, read: Any) -> bool:
         self._call("ReadData", request, size)
         if self.fail_read:
             return False
@@ -115,7 +116,7 @@ class FakeWinHTTP:
     def names(self) -> list[str]:
         return [name for name, _ in self.calls]
 
-    def args(self, name: str) -> list[object]:
+    def args(self, name: str) -> list[tuple[Any, ...]]:
         return [args for call, args in self.calls if call == name]
 
 

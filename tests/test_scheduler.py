@@ -59,7 +59,10 @@ def test_profiles_match_settings_choices() -> None:
     assert set(meta["choices"]) == set(PROFILES)
 
 
-@pytest.mark.parametrize("state", sorted(CAMERA_OFF_STATES, key=lambda s: s.value))
+CAMERA_OFF_ORDER: list[TrackingState] = sorted(CAMERA_OFF_STATES, key=lambda s: s.value)
+
+
+@pytest.mark.parametrize("state", CAMERA_OFF_ORDER)
 def test_camera_off_states_return_one_second(state: TrackingState) -> None:
     policy = RatePolicy("responsive")
     ctx = RateContext(state, pending_switch=True, preview=True)

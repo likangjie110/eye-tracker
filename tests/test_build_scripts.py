@@ -1470,6 +1470,13 @@ def test_build_appimage_verifies_its_downloads(tmp_path: Path) -> None:
     assert "refusing to download" in unpinned.stderr
 
 
+def test_runtime_dependencies_have_upper_bounds() -> None:
+    """D17: a new major release must not reach users without a tested bump."""
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    unbounded = [dep for dep in data["project"]["dependencies"] if "<" not in dep]
+    assert unbounded == []
+
+
 def test_pyproject_metadata() -> None:
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = data["project"]

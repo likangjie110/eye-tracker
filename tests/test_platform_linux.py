@@ -567,7 +567,12 @@ def test_lock_on_gnome_confirmed_after_another_locker(
     tools.install("loginctl", "xdg-screensaver", "dm-tool")
     tools.respond(["loginctl", "lock-session"], (0, ""))
     locked: list[bool] = []
-    tools.respond(["xdg-screensaver"], lambda argv: (locked.append(True) or 0, ""))
+
+    def lock_screen(_argv: list[str]) -> tuple[int, str]:
+        locked.append(True)
+        return 0, ""
+
+    tools.respond(["xdg-screensaver"], lock_screen)
     tools.respond(["loginctl", "show-session"], lambda argv: (0, "yes" if locked else "no"))
     assert plat.lock_screen() is True
     assert ["dm-tool", "lock"] not in tools.calls  # no second lock screen on top

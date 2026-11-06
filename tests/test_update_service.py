@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -78,7 +78,7 @@ def transport(tag: str = TAG, *, body: bytes = BODY) -> FakeTransport:
 @pytest.fixture
 def make(
     qapp: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Callable[..., UpdateService]:
+) -> Iterator[Callable[..., UpdateService]]:
     monkeypatch.setattr(svc, "supported", lambda: True)
     monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path / "updates")
     made: list[UpdateService] = []

@@ -185,7 +185,12 @@ def test_the_setup_is_started_silently_and_detached(
     calls: list[tuple[list[str], dict[str, Any]]] = []
     monkeypatch.setattr(installer, "install_kind", lambda: installer.KIND_SETUP)
     monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path)
-    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: calls.append((cmd, kw)) or object())
+
+    def fake_popen(cmd: list[str], **kw: Any) -> object:
+        calls.append((cmd, kw))
+        return object()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
     path = _prepared(tmp_path)
     installer.launch_installer(path)
     command, options = calls[0]

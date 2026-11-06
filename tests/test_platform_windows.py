@@ -579,7 +579,7 @@ class TestSessionAndInput:
         def broken_send(*_args: Any) -> int:
             raise OSError("send failed")
 
-        api.send_message = broken_send  # type: ignore[method-assign]
+        api.__dict__["send_message"] = broken_send
         assert make_platform(api).display_off() is False
         assert api.calls[-1] == ("destroy_window", 0x5150)
 
@@ -896,7 +896,7 @@ class TestCamera:
             return created.get(pid)
 
         plat._process_created = process_created  # type: ignore[method-assign]
-        plat._process_exe = (exes or {}).get  # type: ignore[method-assign]
+        plat.__dict__["_process_exe"] = (exes or {}).get
         plat._boot_filetime = lambda: boot  # type: ignore[method-assign]
         return plat
 
@@ -1123,7 +1123,12 @@ class TestPermissions:
 
     def test_open_permission_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         opened: list[str] = []
-        monkeypatch.setattr(windows_platform, "_open_uri", lambda uri: opened.append(uri) or True)
+
+        def open_uri(uri: str) -> bool:
+            opened.append(uri)
+            return True
+
+        monkeypatch.setattr(windows_platform, "_open_uri", open_uri)
         plat = make_platform(FakeWin32([]))
         assert plat.open_permission_settings("camera") is True
         assert plat.open_permission_settings("accessibility") is False

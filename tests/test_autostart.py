@@ -1048,8 +1048,8 @@ class TestCommandParsing:
         import ctypes
         from ctypes import wintypes
 
-        shell32 = ctypes.WinDLL("shell32")
-        kernel32 = ctypes.WinDLL("kernel32")
+        shell32 = ctypes.WinDLL("shell32")  # type: ignore[attr-defined]  # Windows-only API
+        kernel32 = ctypes.WinDLL("kernel32")  # type: ignore[attr-defined]  # Windows-only API
         shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
         shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
         kernel32.LocalFree.argtypes = [wintypes.HLOCAL]

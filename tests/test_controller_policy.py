@@ -7,6 +7,8 @@ pinned here.
 
 from __future__ import annotations
 
+from typing import TypedDict, cast
+
 import pytest
 
 from eye_tracker.engine.controller_policy import (
@@ -19,7 +21,43 @@ from eye_tracker.engine.controller_policy import (
 )
 from eye_tracker.types import TrackingState
 
-BASE = {
+
+class _StateFlags(TypedDict):
+    started: bool
+    privacy: bool
+    session_locked: bool
+    pause_when_locked: bool
+    calibrating: bool
+    paused: bool
+    yield_reason: str | None
+    away: bool
+    camera_error: bool
+    has_model: bool
+    calibration_useful: bool
+
+
+class _StateOverrides(TypedDict, total=False):
+    started: bool
+    privacy: bool
+    session_locked: bool
+    pause_when_locked: bool
+    calibrating: bool
+    paused: bool
+    yield_reason: str | None
+    away: bool
+    camera_error: bool
+    has_model: bool
+    calibration_useful: bool
+
+
+class _InterruptArgs(TypedDict):
+    calibration_useful: bool
+    calibrating: bool
+    displays_off_only: bool
+    state: TrackingState
+
+
+BASE: _StateFlags = {
     "started": True,
     "privacy": False,
     "session_locked": False,
@@ -51,13 +89,13 @@ BASE = {
         ({"has_model": False, "calibration_useful": False}, TrackingState.TRACKING),
     ],
 )
-def test_derive_state_priority(overrides: dict[str, object], expected: TrackingState) -> None:
-    flags = {**BASE, **overrides}
+def test_derive_state_priority(overrides: _StateOverrides, expected: TrackingState) -> None:
+    flags = cast(_StateFlags, {**BASE, **overrides})
     assert derive_state(**flags) is expected
 
 
 def test_derive_state_higher_priority_wins_over_lower() -> None:
-    flags = {
+    flags: _StateFlags = {
         **BASE,
         "privacy": True,
         "session_locked": True,
@@ -82,15 +120,19 @@ def test_max_faces_depends_on_the_shoulder_guard() -> None:
 
 
 def test_may_interrupt_needs_a_useful_calibration_and_a_quiet_moment() -> None:
-    kwargs = {
+    kwargs: _InterruptArgs = {
         "calibration_useful": True,
         "calibrating": False,
         "displays_off_only": False,
         "state": TrackingState.TRACKING,
     }
-    assert may_interrupt(**kwargs) is True
-    assert may_interrupt(**{**kwargs, "calibration_useful": False}) is False
-    assert may_interrupt(**{**kwargs, "calibrating": True}) is False
-    assert may_interrupt(**{**kwargs, "displays_off_only": True}) is False
+
+    def interrupts(**changes: object) -> bool:
+        return may_interrupt(**cast(_InterruptArgs, {**kwargs, **changes}))
+
+    assert interrupts() is True
+    assert interrupts(calibration_useful=False) is False
+    assert interrupts(calibrating=True) is False
+    assert interrupts(displays_off_only=True) is False
     for state in (TrackingState.AWAY, TrackingState.LOCKED, TrackingState.PRIVACY):
-        assert may_interrupt(**{**kwargs, "state": state}) is False
+        assert interrupts(state=state) is False

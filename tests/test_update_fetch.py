@@ -19,10 +19,10 @@ class FakeResponse:
     announced: int | None = -1  # -1: the real length of the body
     closed: bool = False
     _pos: int = 0
+    content_length: int | None = None
 
-    @property
-    def content_length(self) -> int | None:
-        return len(self.body) if self.announced == -1 else self.announced
+    def __post_init__(self) -> None:
+        self.content_length = len(self.body) if self.announced == -1 else self.announced
 
     def read(self, size: int) -> bytes:
         chunk = self.body[self._pos : self._pos + size]

@@ -6,6 +6,7 @@ The monitor decider's use of it is covered by tests/test_decision.py.
 from __future__ import annotations
 
 import math
+from typing import TypedDict
 
 from eye_tracker.engine import decision
 from eye_tracker.reading import (
@@ -15,7 +16,13 @@ from eye_tracker.reading import (
     ReadingTracker,
 )
 
-GRACES = {"typing_grace_s": 3.0, "reading_grace_s": 8.0}
+
+class _Graces(TypedDict):
+    typing_grace_s: float
+    reading_grace_s: float
+
+
+GRACES: _Graces = {"typing_grace_s": 3.0, "reading_grace_s": 8.0}
 
 
 def look(

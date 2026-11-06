@@ -17,7 +17,7 @@ import sys
 import threading
 import types
 from collections.abc import Callable, Iterator
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -905,7 +905,8 @@ def test_call_timeout_returns_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_dispatch_ignores_unknown_ids(loopback: LoopbackManager) -> None:
-    assert loopback._dispatch(12345) is None  # unknown id is ignored
+    dispatch = cast("Callable[[int], object]", loopback._dispatch)
+    assert dispatch(12345) is None  # unknown id is ignored
 
 
 # ============================================================================== macOS

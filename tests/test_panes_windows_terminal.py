@@ -37,6 +37,13 @@ LEFT = UiaElement((42, HWND, 4, 101), Rect(8, 80, 948, 952), True, False)
 RIGHT = UiaElement((42, HWND, 4, 102), Rect(964, 80, 948, 952), False, False)
 
 
+def _rect(element: UiaElement) -> Rect:
+    """The element's rectangle; the fakes always set one."""
+    rect = element.rect
+    assert rect is not None
+    return rect
+
+
 class FakeUia:
     """Answers like UI Automation would; records every call."""
 
@@ -121,7 +128,7 @@ def test_detects_two_panes_with_the_focused_one() -> None:
     snapshot = provider(client).detect(WINDOW, APP)
     assert snapshot is not None
     assert snapshot.window_handle == HWND
-    assert [p.rect for p in snapshot.panes] == [LEFT.rect, RIGHT.rect]
+    assert [p.rect for p in snapshot.panes] == [LEFT.rect, _rect(RIGHT)]
     assert [p.id for p in snapshot.panes] == [LEFT.runtime_id, RIGHT.runtime_id]
     assert {p.provider for p in snapshot.panes} == {"windows_terminal"}
     assert snapshot.focused is not None
@@ -185,7 +192,7 @@ def test_ids_are_stable_across_snapshots() -> None:
 
 def test_without_a_runtime_id_the_rectangle_is_the_id() -> None:
     left = UiaElement(None, LEFT.rect, True, False)
-    right = UiaElement((), RIGHT.rect, False, False)
+    right = UiaElement((), _rect(RIGHT), False, False)
     client = FakeUia([left, right])
     p = provider(client)
     snapshot = p.detect(WINDOW, APP)
@@ -206,7 +213,7 @@ def test_nothing_is_asked_unless_the_window_is_in_the_foreground() -> None:
     client = FakeUia(foreground=0x1234)
     p = provider(client)
     assert p.detect(WINDOW, APP) is None
-    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, RIGHT.rect, False, "windows_terminal")) is False
+    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, _rect(RIGHT), False, "windows_terminal")) is False
     assert client.calls == [("foreground",), ("foreground",)]
     assert client.focused == []
     assert p.detect(WindowRef(handle=None), APP) is None
@@ -228,20 +235,20 @@ def test_focus_sets_focus_on_the_matching_pane() -> None:
 def test_focus_of_a_pane_that_is_gone_fails() -> None:
     client = FakeUia()
     p = provider(client)
-    gone = Pane((42, HWND, 4, 999), RIGHT.rect, False, "windows_terminal")
+    gone = Pane((42, HWND, 4, 999), _rect(RIGHT), False, "windows_terminal")
     assert p.focus(WINDOW, gone) is False
     assert client.focused == []
     # An off-screen element is never focused, even with the right id.
-    client.elements = [LEFT, UiaElement(RIGHT.runtime_id, RIGHT.rect, False, True)]
-    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, RIGHT.rect, False, "windows_terminal")) is False
+    client.elements = [LEFT, UiaElement(RIGHT.runtime_id, _rect(RIGHT), False, True)]
+    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, _rect(RIGHT), False, "windows_terminal")) is False
     # Another provider's pane is not ours to focus.
-    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, RIGHT.rect, False, "tmux")) is False
+    assert p.focus(WINDOW, Pane(RIGHT.runtime_id, _rect(RIGHT), False, "tmux")) is False
 
 
 def test_no_focus_when_another_window_came_to_the_front_during_the_walk() -> None:
     client = FakeUia()
     p = provider(client)
-    target = Pane(RIGHT.runtime_id, RIGHT.rect, False, "windows_terminal")
+    target = Pane(RIGHT.runtime_id, _rect(RIGHT), False, "windows_terminal")
     client.foreground_sequence = [HWND, 0x1234]  # in front before the walk, not after it
     assert p.focus(WINDOW, target) is False
     assert client.focused == []
@@ -267,7 +274,12 @@ def test_binding_focus_asks_the_guard_right_before_set_focus(
 
     def fake_method(ptr: int, index: int, *argtypes: Any, restype: Any = None) -> Any:
         assert index == win_uia._EL_SET_FOCUS
-        return lambda: calls.append(f"SetFocus {ptr}") or 0
+
+        def set_focus() -> int:
+            calls.append(f"SetFocus {ptr}")
+            return 0
+
+        return set_focus
 
     def fake_each(hwnd: int, class_name: str, visit: Callable[[int, UiaElement], bool]) -> None:
         for ptr, info in ((11, LEFT), (12, RIGHT)):
@@ -299,7 +311,7 @@ def test_com_errors_become_pane_errors() -> None:
     with pytest.raises(PaneError, match="0x80131505"):
         p.detect(WINDOW, APP)
     with pytest.raises(PaneError):
-        p.focus(WINDOW, Pane(RIGHT.runtime_id, RIGHT.rect, False, "windows_terminal"))
+        p.focus(WINDOW, Pane(RIGHT.runtime_id, _rect(RIGHT), False, "windows_terminal"))
 
 
 # -------------------------------------------------------- with the worker
@@ -321,7 +333,7 @@ def test_worker_switches_the_provider_off_after_three_com_errors(qapp: Any) -> N
     assert worker.disabled_providers == frozenset({"windows_terminal"})
     assert all(r.snapshot is None for r in detected)
     calls = len(client.calls)
-    worker.request_focus(WINDOW, Pane(RIGHT.runtime_id, RIGHT.rect, False, "windows_terminal"))
+    worker.request_focus(WINDOW, Pane(RIGHT.runtime_id, _rect(RIGHT), False, "windows_terminal"))
     assert focused[-1].ok is False
     assert len(client.calls) == calls  # not asked any more
 
@@ -413,7 +425,7 @@ def test_smoke_reads_an_integer_safearray() -> None:
     import ctypes
 
     api = win_uia._api()
-    oleaut32 = ctypes.WinDLL("oleaut32")
+    oleaut32 = ctypes.WinDLL("oleaut32")  # type: ignore[attr-defined]  # Windows-only ctypes API
     create = oleaut32.SafeArrayCreateVector
     create.restype = ctypes.c_void_p
     create.argtypes = [ctypes.c_ushort, ctypes.c_long, ctypes.c_ulong]

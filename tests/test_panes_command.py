@@ -41,7 +41,7 @@ def test_run_command_passes_an_argument_vector_without_a_shell(
     assert seen["timeout"] == 0.7
     assert seen["stdin"] is subprocess.DEVNULL
     if command.sys.platform == "win32":
-        assert seen["creationflags"] & subprocess.CREATE_NO_WINDOW
+        assert seen["creationflags"] & subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
 
 
 def test_run_command_failures_are_pane_errors(monkeypatch: pytest.MonkeyPatch) -> None:

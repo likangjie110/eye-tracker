@@ -186,7 +186,11 @@ def test_thread_answers_and_stops_cleanly(qapp: Any) -> None:
 
 def test_stop_does_not_wait_forever_for_a_hung_provider(qapp: Any) -> None:
     hang = threading.Event()
-    provider = RecordingProvider(snapshot=lambda ref: hang.wait(5.0) and None)
+
+    def hang_snapshot(_ref: object) -> None:
+        hang.wait(5.0)
+
+    provider = RecordingProvider(snapshot=hang_snapshot)
     worker = PaneWorker(PaneRegistry([provider]))
     worker.start()
     worker.request_detect(REF, APP)
@@ -217,7 +221,11 @@ def test_replaced_and_final_providers_are_closed_on_the_worker_thread(qapp: Any)
 
 def test_request_stop_returns_at_once_and_the_thread_closes_up(qapp: Any) -> None:
     release = threading.Event()
-    provider = RecordingProvider(snapshot=lambda ref: release.wait(5.0) and None)
+
+    def release_snapshot(_ref: object) -> None:
+        release.wait(5.0)
+
+    provider = RecordingProvider(snapshot=release_snapshot)
     worker = PaneWorker(PaneRegistry([provider]))
     results: list[Any] = []
     worker.detected.connect(results.append)

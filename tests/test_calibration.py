@@ -81,7 +81,7 @@ def test_plan_stacked_monitors_top_first() -> None:
 
 def test_plan_three_plus_stacked_layout() -> None:
     plan = make_plan(THREE_PLUS_TOP)
-    order = []
+    order: list[int] = []
     for t in plan:
         if not order or order[-1] != t.monitor_index:
             order.append(t.monitor_index)

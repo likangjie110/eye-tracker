@@ -252,7 +252,10 @@ def test_refit_model_uses_template_settings_and_weights() -> None:
     rng = np.random.default_rng(3)
     X = rng.normal(size=(40, 3))
     Y = X @ np.array([[500.0, 0.0], [0.0, 300.0], [50.0, 50.0]]) + (1900.0, 540.0)
-    base = [CalibrationSample(x, *y, 0, i // 4) for i, (x, y) in enumerate(zip(X, Y, strict=True))]
+    base = [
+        CalibrationSample(x, float(y[0]), float(y[1]), 0, i // 4)
+        for i, (x, y) in enumerate(zip(X, Y, strict=True))
+    ]
     template = GazeModel(degree=1, alpha=0.01).fit(X, Y, bounds=Rect(0, 0, 3840, 1080))
 
     # Learned samples that contradict the calibration pull the fit, but weakly.
@@ -356,7 +359,7 @@ def test_gated_learning_resists_parked_cursor_labels() -> None:
                 gaze = random_points(TWO[:1], rng, 1)[0]  # reading the left monitor
             cursor = (3500.0, 900.0) if parked else tuple(gaze)
             features = synth_features(gaze[None, :], rng, 1.0)[0]
-            learner.on_manual_cursor(*cursor, t)
+            learner.on_manual_cursor(cursor[0], cursor[1], t)
             sample = learner.on_observation(obs(t + 0.4, features), t + 0.4, lookup)
             assert sample is not None
             if gate and not plausible_label(model.predict(sample.features), sample, TWO):

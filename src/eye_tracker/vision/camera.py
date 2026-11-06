@@ -25,7 +25,6 @@ import re
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -111,7 +110,6 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT", "2")
 
 
-@dataclass
 @runtime_checkable
 class FrameSource(Protocol):
     """Anything that produces BGR frames for the vision worker."""

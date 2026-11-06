@@ -8,6 +8,7 @@ methods; these tests pin the compatibility rules and the fallback reasons withou
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 from eye_tracker.engine.calibration_select import (
     calibration_useful,
@@ -15,7 +16,7 @@ from eye_tracker.engine.calibration_select import (
     match_profile,
     with_camera_identity,
 )
-from eye_tracker.gaze.store import CalibrationData
+from eye_tracker.gaze.store import CalibrationData, CalibrationLibrary
 from eye_tracker.types import Monitor, Rect, layout_signature
 
 MONITORS = [Monitor(index=0, name="DP-1", rect=Rect(0, 0, 1920, 1080), primary=True, scale=1.0)]
@@ -53,6 +54,16 @@ class Library(list):
     def match(self, *args: object, **kwargs: object) -> tuple[object, str]:
         self.match_calls.append((args, kwargs))
         return self.match_result
+
+
+def as_library(library: Library) -> CalibrationLibrary:
+    """The fake implements the ``match``/list interface of the real library."""
+    return cast(CalibrationLibrary, library)
+
+
+def as_profile(profile: Profile | None) -> CalibrationData | None:
+    """The fake profile implements the fields ``match_profile`` reads."""
+    return cast("CalibrationData | None", profile)
 
 
 def real_calibration(camera: str = "", frame_size: tuple[int, int] = (0, 0)) -> CalibrationData:
@@ -108,8 +119,8 @@ def test_compatible_profile_in_use_wins_without_consulting_the_library() -> None
     current = Profile()
     library = Library([Profile()])
     data, reason = match_profile(
-        library,
-        current,  # type: ignore[arg-type]
+        as_library(library),
+        as_profile(current),
         backend_info=("facemesh", "2"),
         camera="0",
         frame_size=(640, 480),
@@ -125,8 +136,8 @@ def test_incompatible_profile_falls_back_to_the_library_match() -> None:
     other = Profile()
     library = Library(match_result=(other, ""))
     data, reason = match_profile(
-        library,
-        current,  # type: ignore[arg-type]
+        as_library(library),
+        as_profile(current),
         backend_info=("facemesh", "2"),
         camera="0",
         frame_size=(640, 480),
@@ -143,8 +154,8 @@ def test_no_match_keeps_the_current_profiles_reason() -> None:
     current = Profile(compatible=False, reason="another backend")
     library = Library(match_result=(None, "library says nothing fits"))
     data, reason = match_profile(
-        library,
-        current,  # type: ignore[arg-type]
+        as_library(library),
+        as_profile(current),
         backend_info=("facemesh", "2"),
         camera="0",
         frame_size=(640, 480),
@@ -157,7 +168,7 @@ def test_no_match_keeps_the_current_profiles_reason() -> None:
 def test_no_current_profile_and_no_match_returns_the_library_reason() -> None:
     library = Library(match_result=(None, "not calibrated yet"))
     data, reason = match_profile(
-        library,
+        as_library(library),
         None,
         backend_info=("facemesh", "2"),
         camera="0",
@@ -172,12 +183,12 @@ def test_unknown_backend_matches_by_layout() -> None:
     current = Profile()
     library = Library()
     data, reason = match_profile(
-        library,
-        current,
+        as_library(library),
+        as_profile(current),
         backend_info=None,
         camera="0",
         frame_size=None,
-        monitors=MONITORS,  # type: ignore[arg-type]
+        monitors=MONITORS,
     )
     assert data is current
     assert reason == ""
@@ -187,8 +198,8 @@ def test_unknown_backend_accepts_another_matching_profile() -> None:
     current = Profile(fitted=False, compatible=False)
     other = Profile()
     data, reason = match_profile(
-        Library([other]),
-        current,  # type: ignore[arg-type]
+        as_library(Library([other])),
+        as_profile(current),
         backend_info=None,
         camera="0",
         frame_size=None,
@@ -201,8 +212,8 @@ def test_unknown_backend_accepts_another_matching_profile() -> None:
 def test_unknown_backend_explains_a_changed_layout() -> None:
     current = Profile(layout="a-different-layout", compatible=False)
     data, reason = match_profile(
-        Library(),
-        current,  # type: ignore[arg-type]
+        as_library(Library()),
+        as_profile(current),
         backend_info=None,
         camera="0",
         frame_size=None,
@@ -215,8 +226,8 @@ def test_unknown_backend_explains_a_changed_layout() -> None:
 def test_unknown_backend_explains_an_unfitted_model() -> None:
     current = Profile(fitted=False, layout="a-different-layout", compatible=False)
     data, reason = match_profile(
-        Library(),
-        current,  # type: ignore[arg-type]
+        as_library(Library()),
+        as_profile(current),
         backend_info=None,
         camera="0",
         frame_size=None,

@@ -8,8 +8,13 @@ do not depend on a QApplication or a platform.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 from eye_tracker.engine.hotkey_setup import register_hotkeys
+
+if TYPE_CHECKING:
+    from eye_tracker.config import Settings
+    from eye_tracker.platform.hotkeys import HotkeyManager
 
 
 class Manager:
@@ -60,8 +65,8 @@ def run(
     notes: list[tuple[str, str]] = []
     pressed: list[str] = []
     result = register_hotkeys(
-        manager,
-        settings_obj or settings(),
+        cast("HotkeyManager", manager),
+        cast("Settings", settings_obj or settings()),
         announced if announced is not None else set(),
         suspended=suspended,
         on_hotkey=pressed.append,

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QCheckBox
 
 from eye_tracker import REPO_URL
 from eye_tracker import app as app_module
@@ -145,7 +145,12 @@ def test_presenting_looks_for_an_update_only_when_none_is_known(
 ) -> None:
     service = updates()
     asked: list[bool] = []
-    monkeypatch.setattr(service, "check_now", lambda: asked.append(True) or True)
+
+    def check_now() -> bool:
+        asked.append(True)
+        return True
+
+    monkeypatch.setattr(service, "check_now", check_now)
     dialog_ = UpdateDialog(service)
     dialog_.present()
     assert asked == [True]  # nothing known yet
@@ -300,6 +305,7 @@ def test_where_updates_cannot_be_checked_the_switch_is_shown_but_disabled(
     dialog_ = settings_module.SettingsDialog(controller)
     try:
         box = dialog_.widget_for("updates.check")
+        assert isinstance(box, QCheckBox)
         assert not box.isEnabled()
         assert not box.isChecked()
     finally:
