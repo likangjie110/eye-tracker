@@ -55,6 +55,11 @@ WARP_BACKOFF_MAX_S = 1800.0
 ACTIVATION_FAILURE_LIMIT = 3
 
 
+#: Screen hot-plug events come in bursts (and displays drop out during sleep);
+#: the layout is re-read once they have settled.
+SCREEN_DEBOUNCE_MS = 1000
+
+
 class _ScreensHost:
     """State and callbacks the mixin expects from the host ``Controller``."""
 

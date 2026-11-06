@@ -54,9 +54,10 @@ Split panes (experimental)
 --------------------------
 With ``panes.enabled`` the focused window is followed as well: its application
 is identified, its panes are asked for (once when it gets focus, then about
-every :data:`PANE_REFRESH_S` while the gaze is inside it) and, while the monitor
-decider finds the gaze on the cursor's monitor, :class:`~eye_tracker.panes.decider.PaneDecider`
-decides when the keyboard focus moves to another pane. That asks the terminal
+every :data:`~eye_tracker.engine.controller_panes.PANE_REFRESH_S` while the gaze
+is inside it) and, while the monitor decider finds the gaze on the cursor's
+monitor, :class:`~eye_tracker.panes.decider.PaneDecider` decides when the keyboard
+focus moves to another pane. That asks the terminal
 to focus the pane; no window is activated. Once it reports success the cursor
 follows into the pane (``panes.move_cursor``), through the same announced warp
 as a monitor switch. Pane focus waits ``panes.after_monitor_switch_ms`` after a
@@ -82,7 +83,6 @@ publishes statistics.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import functools
 import json
 import logging
@@ -99,19 +99,16 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from .. import __version__, paths
 from ..config import Settings
 from ..gaze.filters import PointFilter
-from ..gaze.learning import DriftMonitor, ImplicitLearner, plausible_label, refit_model
-from ..gaze.store import CalibrationData, CalibrationLibrary, axis_error
+from ..gaze.learning import DriftMonitor, ImplicitLearner
+from ..gaze.store import CalibrationData, CalibrationLibrary
 from ..panes.decider import (
-    FALLBACK_GAZE_ERROR_PX,
     PaneConfig,
     PaneDecider,
     PaneDecision,
-    eligible_panes,
 )
-from ..panes.providers.command import window_key
-from ..panes.registry import PaneRegistry, default_providers, is_denied
-from ..panes.types import Pane, PaneSnapshot
-from ..panes.worker import DetectResult, FocusResult, PaneWorker
+from ..panes.registry import PaneRegistry
+from ..panes.types import PaneSnapshot
+from ..panes.worker import PaneWorker
 from ..platform.base import PlatformServices
 from ..trace import TraceWriter
 from ..types import (
@@ -124,11 +121,15 @@ from ..types import (
     WindowRef,
     WorkerStats,
     monitor_at,
-    nearest_monitor,
 )
-from .calibration_select import calibration_useful, match_profile, with_camera_identity
+from .calibration_select import calibration_useful
 from .camera_yield import YieldInputs, should_yield
+from .controller_calibration import (
+    CALIBRATION_REMINDER_S,  # noqa: F401 - re-exported for the controller tests
+    ControllerCalibrationMixin,
+)
 from .controller_hotkeys import ControllerHotkeysMixin
+from .controller_panes import ControllerPanesMixin
 from .controller_policy import (
     TICK_IDLE_MS,
     derive_state,
@@ -137,6 +138,7 @@ from .controller_policy import (
 )
 from .controller_screens import (
     LOCK_POLL_S,
+    SCREEN_DEBOUNCE_MS,
     WARP_BACKOFF_S,  # noqa: F401 - re-exported for the controller tests
     WARP_REFUSAL_LIMIT,  # noqa: F401 - re-exported for the controller tests
     WRONG_SWITCH_S,
@@ -155,7 +157,6 @@ from .controller_support import (
     _make_vision_worker,
     _named_backend_gaze_indices,
     _pane_providers,
-    _same_handle,
     _same_monitor,  # noqa: F401 - re-exported for the controller tests
     _save_privacy_mode,
     _saved_privacy_mode,
@@ -208,9 +209,6 @@ WINDOW_POLL_S = 0.5
 YIELD_POLL_S = 3.0
 #: How often ``stats_changed`` is emitted.
 STATS_PERIOD_S = 2.0
-#: Screen hot-plug events come in bursts (and displays drop out during sleep);
-#: the layout is re-read once they have settled.
-SCREEN_DEBOUNCE_MS = 1000
 #: The worker interval is only updated when it changes by more than this fraction.
 RATE_TOLERANCE = 0.05
 #: During a blink the last gaze point is held for this long, so a blink does not
@@ -228,8 +226,6 @@ GAZE_MOVING_HOLD_S = 0.5
 STALE_OBSERVATION_S = 2.5
 #: Keyboard activity this recent selects the scheduler's "typing" rate.
 TYPING_RATE_WINDOW_S = 2.0
-#: Minimum time between two "accuracy dropped" notifications.
-DRIFT_ALERT_COOLDOWN_S = 1800.0
 #: Consecutive observations the gaze model must reject (wrong feature vector)
 #: before the calibration is declared unusable. After a backend change a few
 #: frames analysed by the old backend are still on their way; they must not
@@ -243,13 +239,6 @@ FEATURE_MISMATCH_LIMIT = 5
 #: view (turning to the user, looking down at notes) and ends once nobody has
 #: looked over the user's shoulder for this long.
 GUARD_RELOCK_GRACE_S = 300.0
-#: A deferred "calibration needed" announcement is delivered once the user could
-#: be interrupted for this long and no monitor change is pending: displays that
-#: drop out during sleep come back unchanged and must not prompt.
-ANNOUNCE_SETTLE_S = 2 * SCREEN_DEBOUNCE_MS / 1000.0
-#: When the user comes back (from away, a locked session or privacy mode) to a
-#: calibration that is still unusable, they are reminded, at most this often.
-CALIBRATION_REMINDER_S = 1800.0
 #: Blindness (lens covered, shutter closed, dark room) that begins within this
 #: many seconds of seeing the user's face or their input means the user covered
 #: the camera: walk-away detection then pauses instead of counting "no face".
@@ -265,14 +254,6 @@ BLIND_NOTICE_COOLDOWN_S = 600.0
 CAMERA_ERROR_RECHECK_S = 8.0
 #: How long :meth:`Controller.shutdown` waits for a screen lock still in progress.
 LOCK_JOIN_TIMEOUT_S = 2.0
-#: While the gaze is inside the focused terminal window its panes are asked for
-#: again this often (at the next window poll), so the layout the pane decider
-#: sees is never much older than its freshness limit (1.5 s).
-PANE_REFRESH_S = 1.0
-#: How long :meth:`Controller.shutdown` waits for a pane provider call in progress.
-PANE_JOIN_TIMEOUT_S = 2.0
-#: Windows whose pane cursor positions are remembered (least recently used dropped).
-PANE_CURSOR_WINDOWS = 16
 #: IPC commands handled by :meth:`Controller.handle_command`.
 COMMANDS = (
     "show",
@@ -309,7 +290,13 @@ _NAPPABLE_STATES = frozenset({TrackingState.PAUSED, TrackingState.PRIVACY})
 
 
 # ------------------------------------------------------------------------ controller
-class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
+class Controller(
+    ControllerHotkeysMixin,
+    ControllerScreensMixin,
+    ControllerPanesMixin,
+    ControllerCalibrationMixin,
+    QObject,
+):
     """Main-thread orchestrator of tracking, switching, presence and privacy features.
 
     Args:
@@ -360,8 +347,9 @@ class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
     #:
     #: Emitted for explicit requests (``"hotkey"``, ``"ipc"``), when a usable
     #: calibration becomes unusable (deferred until the user can be interrupted),
-    #: and as a reminder, at most every :data:`CALIBRATION_REMINDER_S`, when the
-    #: user comes back from away, a locked session or privacy mode to a
+    #: and as a reminder, at most every
+    #: :data:`~eye_tracker.engine.controller_calibration.CALIBRATION_REMINDER_S`, when
+    #: the user comes back from away, a locked session or privacy mode to a
     #: calibration that is still unusable. The same reason can therefore arrive
     #: more than once; each emission is meant to be shown.
     calibration_required = Signal(str)
@@ -1020,26 +1008,6 @@ class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
             "panes": self._pane_status(),
         }
 
-    def _pane_status(self) -> dict[str, Any]:
-        """Split-pane focus at a glance: never titles, commands or paths."""
-        snapshot = self._pane_snapshot
-        window = self._pane_window
-        sigma = self._pane_sigma_used
-        if sigma is None and window is not None and window.rect is not None:
-            sigma = self._pane_sigma(window.rect)
-        worker = self._pane_worker
-        fallback = (FALLBACK_GAZE_ERROR_PX, FALLBACK_GAZE_ERROR_PX)
-        return {
-            "enabled": bool(self._settings.panes.enabled),
-            "supported": self._panes_supported(),
-            "provider": snapshot.provider if snapshot is not None else None,
-            "panes": len(snapshot.panes) if snapshot is not None else 0,
-            "eligible": eligible_panes(snapshot, sigma or fallback, self._pane_decider.config),
-            "switches": self._pane_switches,
-            "sigma_px": None if sigma is None else [round(sigma[0], 1), round(sigma[1], 1)],
-            "failed_providers": sorted(worker.disabled_providers) if worker is not None else [],
-        }
-
     # ================================================================ housekeeping
     def tick(self) -> None:
         """One housekeeping step (normally driven by the internal timer)."""
@@ -1101,266 +1069,8 @@ class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
             self._check_drift(now)
 
     # ---------------------------------------------------------- split panes
-    def _panes_supported(self) -> bool:
-        """The platform's ``panes`` capability (asked once)."""
-        if self._pane_capable is None:
-            caps = self._platform_call("capabilities", default={})
-            self._pane_capable = bool(isinstance(caps, dict) and caps.get("panes", False))
-        return self._pane_capable
-
-    def _panes_wanted(self) -> bool:
-        s = self._settings
-        return bool(s.panes.enabled and s.switching.enabled and self._panes_supported())
-
-    def _default_pane_registry(self, settings: Settings) -> PaneRegistry:
-        return PaneRegistry(
-            default_providers(settings.panes, client_rect=self._pane_client_rect),
-            desktop_apps=settings.panes.desktop_apps,
-        )
-
-    def _pane_client_rect(self, ref: WindowRef) -> Rect | None:  # pane worker thread
-        rect = self._platform_call("window_client_rect", ref)
-        return rect if isinstance(rect, Rect) else None
-
-    def _ensure_pane_worker(self) -> PaneWorker | None:
-        if self._pane_worker is None and self._panes_wanted() and not self._closed:
-            try:
-                worker = self._pane_worker_factory(self._pane_registry_factory(self._settings))
-                worker.detected.connect(self._on_pane_detected)
-                worker.focused.connect(self._on_pane_focused)
-                worker.start()
-            except Exception:
-                log.warning("Split-pane focus could not start", exc_info=True)
-                return None
-            self._pane_worker = worker
-            # A new worker numbers its requests from 1 again.
-            self._pane_last_request = 0
-            self._pane_valid_from = 0
-            log.info("Split-pane focus is on (experimental)")
-        return self._pane_worker
-
-    def _stop_pane_worker(self, *, wait: bool) -> None:
-        """Stop the pane worker. Only :meth:`shutdown` waits for a provider call
-        in progress; a settings change must not block the GUI thread, and a
-        stopped worker delivers nothing more."""
-        worker, self._pane_worker = self._pane_worker, None
-        if worker is None:
-            return
-        try:
-            if wait:
-                worker.stop(PANE_JOIN_TIMEOUT_S)
-            else:
-                worker.request_stop()
-        except Exception:
-            log.debug("Stopping the pane worker failed", exc_info=True)
-
-    def _reconfigure_panes(self, *, providers_changed: bool) -> None:
-        """Split-pane settings changed: start, stop or re-provision the worker."""
-        if not self._panes_wanted():
-            if self._pane_worker is not None:
-                log.info("Split-pane focus is off")
-            self._stop_pane_worker(wait=False)
-            self._forget_pane_window()
-            self._pane_decider.reset()
-            return
-        worker = self._pane_worker
-        if worker is not None and providers_changed:
-            worker.set_registry(self._pane_registry_factory(self._settings))
-            self._pane_snapshot = None
-            self._pane_requested_at = -math.inf
-            self._pane_valid_from = self._pane_last_request + 1
-
-    def _forget_pane_window(self) -> None:
-        self._pane_window = None
-        self._pane_app = None
-        self._pane_snapshot = None
-        self._pane_requested_at = -math.inf
-        self._pane_valid_from = self._pane_last_request + 1
-
-    def _follow_pane_window(self, ref: WindowRef, now: float) -> None:
-        """Track the focused window and ask for its panes when useful.
-
-        A new window is asked about at once; the window being followed again
-        every :data:`PANE_REFRESH_S` while the gaze is inside it. Windows of
-        denied applications (see ``panes.registry``) are never asked about.
-        """
-        current = self._pane_window
-        if (
-            current is None
-            or current.pid != ref.pid  # a handle reused by another process's window
-            or not self._platform_call("same_window", current, ref, default=False)
-        ):
-            self._pane_window = ref
-            self._pane_snapshot = None
-            self._pane_requested_at = -math.inf
-            self._pane_valid_from = self._pane_last_request + 1
-            self._prune_pane_cursors()
-            app = self._platform_call("window_app", ref)
-            self._pane_app = app if isinstance(app, AppIdentity) else None
-            fresh = True
-        else:
-            # Keep the handle object the snapshot belongs to; only the frame moves.
-            if ref.rect != current.rect:
-                self._pane_window = dataclasses.replace(current, rect=ref.rect)
-            fresh = False
-        app = self._pane_app
-        if app is None or is_denied(app, desktop_apps=self._settings.panes.desktop_apps):
-            return
-        if not fresh:
-            gaze = self._last_gaze
-            rect = ref.rect
-            inside = gaze is not None and rect is not None and rect.contains(*gaze)
-            if not inside or now - self._pane_requested_at < PANE_REFRESH_S:
-                return
-        worker = self._ensure_pane_worker()
-        window = self._pane_window
-        if worker is None or window is None:
-            return
-        self._pane_requested_at = now
-        self._pane_last_request = worker.request_detect(window, app)
-
-    def _on_pane_detected(self, result: DetectResult) -> None:
-        window = self._pane_window
-        if self._closed or window is None or not _same_handle(result.window_handle, window.handle):
-            return  # the user moved on to another window meanwhile
-        if result.request_id < self._pane_valid_from:
-            return  # asked before a window change or with the providers since replaced
-        self._pane_snapshot = result.snapshot
-        if result.snapshot is not None:
-            # Panes that closed take their remembered cursor position with them.
-            entry = self._pane_cursor.get(window_key(window))
-            if entry is not None:
-                ids = {p.id for p in result.snapshot.panes}
-                for gone in [pid for pid in entry[1] if pid not in ids]:
-                    del entry[1][gone]
-
-    def _on_pane_focused(self, result: FocusResult) -> None:
-        if self._closed:
-            return
-        if not result.ok:
-            log.debug("Could not focus pane %s", result.pane_id)
-            return
-        self._pane_switches += 1
-        snapshot = self._pane_snapshot
-        if snapshot is not None and _same_handle(snapshot.window_handle, result.window_handle):
-            pane = snapshot.pane(result.pane_id)
-            self._pane_snapshot = snapshot.with_focus(result.pane_id)
-            if pane is not None and self._settings.panes.move_cursor:
-                self._move_cursor_into_pane(pane)
-        self._pane_requested_at = -math.inf  # confirm the new layout at the next poll
 
     # ------------------------------------------------- cursor in split panes
-    def _move_cursor_into_pane(self, pane: Pane) -> None:
-        """After a pane got the keyboard focus: the cursor follows, to where the
-        user last left it in that pane (if still inside it), else its centre.
-
-        The same path as a monitor switch: the warp is announced to the input
-        tracker first (so it is not taken for mouse use) and refusals count
-        towards the warp backoff. Nothing happens if the cursor is already in
-        the pane.
-        """
-        window = self._pane_window
-        if window is None:
-            return
-        rect = pane.rect
-        cursor = self._cursor_pos()
-        if self._cursor_reliable and cursor is not None and rect.contains(*cursor):
-            return
-        entry = self._pane_cursor.get(window_key(window))
-        spot = entry[1].get(pane.id) if entry is not None else None
-        if spot is None or not rect.contains(*spot):
-            spot = rect.clamp(*rect.center)
-        now = self._clock()
-        self._input.note_programmatic_move(spot, now)
-        if self._move_cursor(spot[0], spot[1], now):
-            log.debug("Cursor moved into pane %s", pane.id)
-
-    def _remember_pane_cursor(self, pos: tuple[int, int]) -> None:
-        """Record ``pos`` for the pane of the followed window that contains it."""
-        window = self._pane_window
-        snapshot = self._pane_snapshot
-        if (
-            window is None
-            or snapshot is None
-            or not self._settings.panes.move_cursor
-            or not _same_handle(snapshot.window_handle, window.handle)
-        ):
-            return
-        pane = next((p for p in snapshot.panes if p.rect.contains(*pos)), None)
-        if pane is None:
-            return
-        key = window_key(window)
-        entry = self._pane_cursor.pop(key, None)  # re-inserted: most recently used last
-        spots = entry[1] if entry is not None else {}
-        spots[pane.id] = (int(pos[0]), int(pos[1]))
-        self._pane_cursor[key] = (window, spots)
-        while len(self._pane_cursor) > PANE_CURSOR_WINDOWS:
-            self._pane_cursor.pop(next(iter(self._pane_cursor)))
-
-    def _prune_pane_cursors(self) -> None:
-        """Forget the cursor positions of windows that are gone."""
-        for key, (ref, _spots) in list(self._pane_cursor.items()):
-            if not self._platform_call("is_window_valid", ref, default=False):
-                del self._pane_cursor[key]
-
-    def _pane_sigma(self, rect: Rect) -> tuple[float, float] | None:
-        """The calibration's gaze error on the monitor showing ``rect`` (cached)."""
-        cal = self._calibration
-        if cal is None or not self._monitors:
-            return None
-        cx, cy = rect.center
-        monitor = monitor_at(self._monitors, cx, cy) or nearest_monitor(self._monitors, cx, cy)[0]
-        cached = self._pane_sigma_cache
-        if (
-            cached is not None
-            and cached[0] is cal
-            and cached[1] == monitor.index
-            and cached[2] == monitor.rect
-        ):
-            return cached[3]
-        sigma = axis_error(cal, monitor)
-        self._pane_sigma_cache = (cal, monitor.index, monitor.rect, sigma)
-        return sigma
-
-    def _pane_step(
-        self,
-        now: float,
-        gaze: tuple[float, float] | None,
-        decision: Decision,
-        enabled: bool,
-    ) -> PaneDecision:
-        """Move the keyboard focus between split panes (only while the monitor
-        decider is content). Never activates a window; the cursor follows only once
-        the focus call succeeded (:meth:`_on_pane_focused`)."""
-        s = self._settings.panes
-        worker = self._pane_worker
-        window = self._pane_window
-        active = (
-            enabled
-            and s.enabled
-            and worker is not None
-            and window is not None
-            and decision.target is None
-            and decision.reason == "same"
-            and now - self._decider.last_switch_time >= s.after_monitor_switch_ms / 1000.0
-        )
-        rect = window.rect if window is not None else None
-        sigma = self._pane_sigma(rect) if active and rect is not None else None
-        if active:
-            self._pane_sigma_used = sigma
-        pane = self._pane_decider.update(
-            now,
-            gaze,
-            rect,
-            self._pane_snapshot,
-            sigma,
-            self._input.last_mouse_activity,
-            self._input.last_key_activity,
-            enabled=active,
-        )
-        if pane.target is not None and worker is not None and window is not None:
-            worker.request_focus(window, pane.target)
-        return pane
 
     def _check_session_lock(self, now: float) -> None:
         locked = self._platform_call("is_session_locked")
@@ -1808,71 +1518,6 @@ class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
         self.gaze_changed.emit(GazePoint(gaze[0], gaze[1], now))
 
     # ------------------------------------------------------------------ learning
-    def _learn(self, obs: Observation, now: float) -> None:
-        cal, model = self._calibration, self._model
-        if cal is None or model is None or self._learner.max_samples <= 0:
-            return
-        sample = self._learner.on_observation(obs, now, self._monitor_index_at)
-        if sample is None:
-            return
-        predicted = self._predict_point(model, sample.features)
-        predicted_monitor = (
-            nearest_monitor(self._monitors, *predicted)[0].index
-            if predicted is not None and self._monitors
-            else None
-        )
-        # The comparison is drift evidence either way, also for a rejected label.
-        self._drift.record(predicted_monitor, sample.monitor_index)
-        self._check_drift(now)
-        if predicted is not None and not plausible_label(predicted, sample, self._monitors):
-            # The pointer was parked while the user read elsewhere: not a label.
-            self._learner.discard_last()
-            log.debug("Ignored an implausible learning sample at %.0f, %.0f", sample.x, sample.y)
-            return
-        self._implicit_dirty = True
-        if self._learner.should_refit():
-            self._refit(cal, model)
-
-    def _refit(self, cal: CalibrationData, model: GazeModel) -> None:
-        self._learner.mark_refit()
-        learned = self._learner.samples
-        try:
-            refined = refit_model(cal.samples, learned, model, monitors=cal.monitors)
-        except (ValueError, np.linalg.LinAlgError) as exc:
-            log.warning("Could not refine the gaze model: %s", exc)
-            return
-        cal.model = refined
-        cal.implicit_samples = learned
-        self._model = refined
-        self._save_calibration(cal, quiet=True)
-        log.info("Gaze model refined with %d learned samples", len(learned))
-
-    def _refit_after_trim(self) -> None:
-        """Refit the calibration after learned samples were dropped (smaller capacity)."""
-        cal = self._calibration
-        if cal is None or not cal.model.is_fitted:
-            return
-        learned = self._learner.samples
-        try:
-            refined = refit_model(cal.samples, learned, cal.model, monitors=cal.monitors)
-        except (ValueError, np.linalg.LinAlgError) as exc:
-            log.warning("Could not refit the gaze model: %s", exc)
-            return
-        cal.model = refined
-        cal.implicit_samples = learned
-        if self._model is not None:
-            self._model = refined
-        self._save_calibration(cal, quiet=True)
-        log.info("Gaze model refitted with the %d learned samples kept", len(learned))
-
-    def _check_drift(self, now: float) -> None:
-        if self._settings.learning.drift_alerts and self._drift.should_alert(
-            now, DRIFT_ALERT_COOLDOWN_S
-        ):
-            self._notify(
-                "Accuracy dropped",
-                "Accuracy dropped — recalibrate? Choose Calibrate… in the tray menu.",
-            )
 
     @staticmethod
     def _predict_point(model: GazeModel, features: np.ndarray) -> tuple[float, float] | None:
@@ -2252,194 +1897,6 @@ class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
         self._platform_call("set_background_activity", active)
 
     # =============================================================== calibration
-    def _load_calibration(self) -> None:
-        self._library = CalibrationLibrary.load(paths.calibration_file())
-        self._use_profile(self._library.latest, save=False)
-        if self._calibration is None:
-            self._calibration_reason = "not calibrated yet"
-
-    def _use_profile(self, data: CalibrationData | None, *, save: bool) -> None:
-        """Make ``data`` the calibration in use, with its own learned samples.
-
-        The samples learned for the previous profile are kept in that profile.
-        ``save`` also marks ``data`` as the most recently used and writes the file.
-        """
-        if data is self._calibration:
-            return
-        self._flush_learned()
-        self._calibration = data
-        self._model = None
-        self._learner.clear()
-        if data is not None and data.implicit_samples:
-            self._learner.load(data.implicit_samples)
-        self._implicit_dirty = False
-        self._drift.reset()
-        self._feature_mismatches = 0
-        changed = False
-        if data is not None and len(self._learner.samples) < len(data.implicit_samples):
-            # The learning capacity was lowered after this profile learned (while
-            # another profile was in use, or in the settings file): load() kept
-            # only what fits, but the stored model was fitted with all of them.
-            changed = self._refit_trimmed_profile(data)
-        if save and data is not None and self._library.mark_used(data):
-            changed = True
-        if changed:
-            self._write_library(quiet=True)
-
-    def _refit_trimmed_profile(self, data: CalibrationData) -> bool:
-        """Refit ``data`` with the learned samples the learner kept.
-
-        Otherwise the dropped samples would keep steering the gaze (with a
-        capacity of 0, "no learned influence" would not hold) and stay in the
-        file. Returns whether ``data`` changed (and should be saved); on failure
-        the profile is left as it was.
-        """
-        kept = self._learner.samples
-        if data.model.is_fitted:
-            try:
-                data.model = refit_model(data.samples, kept, data.model, monitors=data.monitors)
-            except (ValueError, np.linalg.LinAlgError) as exc:
-                log.warning(
-                    "Could not refit the gaze model after trimming learned samples: %s", exc
-                )
-                return False
-        data.implicit_samples = kept
-        log.info(
-            "Learned samples trimmed to the capacity of %d; gaze model refitted with %d",
-            self._learner.max_samples,
-            len(kept),
-        )
-        return True
-
-    def _flush_learned(self) -> None:
-        """Copy unsaved learned samples into the calibration they belong to."""
-        if self._implicit_dirty and self._calibration is not None:
-            self._calibration.implicit_samples = self._learner.samples
-
-    def _with_camera_identity(self, data: CalibrationData) -> CalibrationData:
-        return with_camera_identity(
-            data,
-            camera_device=str(self._settings.camera.device),
-            frame_size=self._frame_size,
-        )
-
-    def _save_calibration(self, data: CalibrationData, *, quiet: bool) -> bool:
-        """Store ``data`` as the most recently used profile and write the file."""
-        self._flush_learned()
-        self._library.put(data)
-        return self._write_library(quiet=quiet)
-
-    def _write_library(self, *, quiet: bool) -> bool:
-        try:
-            self._library.save(paths.calibration_file())
-        except (OSError, ValueError) as exc:
-            log.error("Could not save the calibration: %s", exc)
-            if not quiet:
-                self._notify("Calibration not saved", str(exc), force=True)
-            return False
-        self._implicit_dirty = False
-        return True
-
-    def _validate_calibration(self, *, announce: bool) -> None:
-        """Decide which calibration fits the backend, monitors and camera in use.
-
-        The profile in use is kept while it fits; otherwise the best saved profile
-        for the current setup is taken (and learned samples follow it). Without
-        one the calibration is unusable and, if it was usable and ``announce``,
-        ``calibration_required`` is emitted (now or once the user is back).
-        """
-        was_usable = self._model is not None
-        if not self._monitors and self._calibration is not None:
-            return  # nothing to compare with; keep the current verdict
-        data, reason = self._match_profile()
-        if data is not None:
-            switched = data is not self._calibration
-            if switched:
-                log.info(
-                    "Using the calibration of %s for this setup",
-                    data.created_at or "an earlier session",
-                )
-                self._use_profile(data, save=True)
-            if not was_usable or switched:
-                log.info("Calibration is usable")
-                self._reset_tracking()
-            self._model = data.model
-            self._calibration_reason = ""
-            self._announce_pending = None
-            self._interruptible_since = None
-            return
-        self._model = None
-        self._calibration_reason = reason
-        if was_usable:
-            log.warning("Calibration no longer usable: %s", reason)
-            if announce:
-                self._announce_calibration(reason)
-
-    def _match_profile(self) -> tuple[CalibrationData | None, str]:
-        return match_profile(
-            self._library,
-            self._calibration,
-            backend_info=self._current_backend(),
-            camera=str(self._settings.camera.device),
-            frame_size=self._frame_size,
-            monitors=self._monitors,
-        )
-
-    def _invalidate_calibration(self, reason: str) -> None:
-        was_usable = self._model is not None
-        self._model = None
-        self._calibration_reason = reason
-        if was_usable:
-            self._announce_calibration(reason)
-
-    def _announce_calibration(self, reason: str) -> None:
-        """Emit ``calibration_required`` now, or once the user can be interrupted."""
-        if self._may_interrupt():
-            self._emit_calibration_required(reason)
-        else:
-            log.debug("Calibration announcement deferred: %s", reason)
-            self._announce_pending = reason
-            self._interruptible_since = None
-
-    def _remind_calibration(self, now: float) -> None:
-        """The user is back (from away, a lock or privacy mode): remind them of a
-        calibration that is still unusable, unless that was said recently.
-
-        Also when there never was one: otherwise a setup that starts at login and
-        was never calibrated would never be told why nothing switches.
-        """
-        if (
-            self._model is not None
-            or self._announce_pending is not None
-            or now - self._last_announce < CALIBRATION_REMINDER_S
-        ):
-            return
-        self._announce_pending = self._calibration_reason
-        self._interruptible_since = None
-
-    def _deliver_calibration_notice(self, now: float) -> None:
-        """Deliver a deferred announcement once the user has been interruptible for
-        ANNOUNCE_SETTLE_S with no monitor change pending."""
-        if self._announce_pending is None:
-            return
-        if self._model is not None:
-            self._announce_pending = None  # usable again: nothing to say
-            self._interruptible_since = None
-            return
-        if not self._may_interrupt() or self._screen_timer.isActive():
-            self._interruptible_since = None
-            return
-        if self._interruptible_since is None:
-            self._interruptible_since = now
-            return
-        if now - self._interruptible_since >= ANNOUNCE_SETTLE_S:
-            self._emit_calibration_required(self._calibration_reason or self._announce_pending)
-
-    def _emit_calibration_required(self, reason: str) -> None:
-        self._announce_pending = None
-        self._interruptible_since = None
-        self._last_announce = self._clock()
-        self.calibration_required.emit(reason)
 
     # =================================================================== backend
     def _make_backend_factory(self, settings: Settings) -> BackendFactory:

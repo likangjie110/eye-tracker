@@ -32,7 +32,9 @@ FOUNDATION = {
 }
 CONTROLLER = {
     "eye_tracker.engine.controller",
+    "eye_tracker.engine.controller_calibration",
     "eye_tracker.engine.controller_hotkeys",
+    "eye_tracker.engine.controller_panes",
     "eye_tracker.engine.controller_screens",
     "eye_tracker.engine.controller_support",
 }
@@ -87,6 +89,7 @@ PURE_MODULES = (
 )
 PURE_EXCEPTIONS = {
     "eye_tracker.engine.controller",
+    "eye_tracker.engine.controller_calibration",
     "eye_tracker.engine.controller_screens",
     "eye_tracker.engine.controller_support",
 }
