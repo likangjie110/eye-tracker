@@ -34,7 +34,12 @@ CONTROLLER = {
     "eye_tracker.engine.controller",
     "eye_tracker.engine.controller_support",
 }
-COMPOSITION = {"eye_tracker.app", "eye_tracker.ipc", "eye_tracker.diagnostics"}
+COMPOSITION = {
+    "eye_tracker.app",
+    "eye_tracker.app_startup",
+    "eye_tracker.ipc",
+    "eye_tracker.diagnostics",
+}
 ENTRY = {"eye_tracker.cli", "eye_tracker.__main__"}
 
 #: Which layers a layer may import. ``*`` is the composition root and may wire anything.

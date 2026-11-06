@@ -23,7 +23,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from eye_tracker import app as app_module
-from eye_tracker import ipc, paths
+from eye_tracker import app_startup, ipc, paths
 from eye_tracker.app import AppContext, build_app, run_app
 from eye_tracker.config import Settings
 from eye_tracker.logging_setup import shutdown_logging
@@ -489,7 +489,7 @@ def test_a_launch_waits_for_an_instance_that_is_shutting_down(
         if len(waits) == 2:
             holder.release()  # it has stopped the camera and exits
 
-    monkeypatch.setattr(app_module, "_wait_ms", wait)
+    monkeypatch.setattr(app_startup, "_wait_ms", wait)
     try:
         h = build(background=False)
     finally:
@@ -516,7 +516,7 @@ def test_a_launch_hands_over_once_a_busy_instance_answers(
         return next(replies)
 
     monkeypatch.setattr(ipc, "send_command", send)
-    monkeypatch.setattr(app_module, "_wait_ms", lambda ms: None)
+    monkeypatch.setattr(app_startup, "_wait_ms", lambda ms: None)
     holder = ipc.InstanceLock()  # an instance that is still starting up
     assert holder.acquire()
     try:
@@ -923,7 +923,7 @@ def test_a_lock_holder_that_does_not_answer_keeps_other_launches_out(
 ) -> None:
     """windows-09: the instance lock decides who runs, not a racy socket probe."""
     monkeypatch.setattr(ipc, "STARTUP_WAIT_MS", 300)
-    monkeypatch.setattr(app_module, "HANDOVER_WAIT_MS", 300)  # then it gives up
+    monkeypatch.setattr(app_startup, "HANDOVER_WAIT_MS", 300)  # then it gives up
     holder = ipc.InstanceLock()  # e.g. an instance that is still starting up, or hangs
     assert holder.acquire()
     try:
@@ -1123,7 +1123,7 @@ def test_the_instance_lock_is_released_when_startup_raises(
     if failing == "send_command":
         monkeypatch.setattr(ipc, "send_command", boom)
     elif failing == "create_app":
-        monkeypatch.setattr(app_module, "_create_app", boom)
+        monkeypatch.setattr(app_startup, "_create_app", boom)
     else:
         monkeypatch.setattr(ipc, "InstanceServer", boom)
     with pytest.raises(RuntimeError, match=failing):

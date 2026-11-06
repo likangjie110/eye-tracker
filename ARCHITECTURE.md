@@ -33,7 +33,8 @@ Layer 1 — domain logic and adapters
 Layer 2 — orchestration
   engine/controller.py         owns the pipeline state and the Qt timers
   engine/controller_support.py the pointer/worker seams and vision factories the controller injects
-  app.py                startup sequence, single instance, owns windows and the controller
+  app.py                owns windows and the controller; public startup entry point
+  app_startup.py        startup sequence, single instance, handover and Qt wiring
   ipc.py                single-instance guard and local command channel
   ipc_runtime.py        private runtime directory for the local socket
   diagnostics.py        doctor / bench aggregation
