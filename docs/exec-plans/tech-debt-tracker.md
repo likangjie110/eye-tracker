@@ -25,7 +25,7 @@
 | PERF（性能/可靠性） | 4 | 0 | 0 | 4 |
 | CI（门禁/流水线） | 33 | 0 | 1 | 32 |
 | META（过程/元） | 2 | 0 | 0 | 2 |
-| **合计** | **108** | **0** | **22** | **86** |
+| **合计** | **109** | **0** | **22** | **87** |
 
 归并规则：三份原始审计共 97 条（CI 51 / 测试与文档 29 / 安全 17），与机械扫描、人工复核合并后
 按**同一根因**归并为 105 条（含少量本次新增）；原始报告完整归档在
@@ -40,7 +40,7 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-ARCH-001 | `engine` 与 `panes` 包级双向依赖 | `engine/controller.py:106-116`；`panes/decider.py:44` | P1 | controller 依赖 panes.*；panes.decider 反向 import `engine.reading`；机械扫描包边 engine→panes 5、panes→engine 1 | 把纯规则 `reading` 下沉到共享层，或规定 panes 只依赖 engine 的纯接口子模块；结构测试断言一条方向 | 无 | B1/B6；`tests/test_architecture.py` 断言无环 | 已排期：B6 收尾（panes→engine.reading 例外，随剩余批次处理） |
+| TD-ARCH-001 | `engine` 与 `panes` 包级双向依赖 | `engine/controller.py:106-116`；`panes/decider.py:44` | P1 | controller 依赖 panes.*；panes.decider 反向 import `engine.reading`；机械扫描包边 engine→panes 5、panes→engine 1 | 把纯规则 `reading` 下沉到共享层，或规定 panes 只依赖 engine 的纯接口子模块；结构测试断言一条方向 | 无 | B1/B6；`tests/test_architecture.py` 断言无环 | 已完成（2026-11-06：reading 规则下沉到 foundation `eye_tracker.reading`；panes 不再 import engine；结构测试无环） |
 | TD-ARCH-002 | ~~18 模块强连通分量（app/cli/diagnostics/hotkeys/ui）~~ 已消除 | `app.py:54`、`cli.py:479,490`、`diagnostics.py:40`、`hotkeys.py:2685`、`ui/settings_dialog.py:68`、`ui/tray.py:23` | P1 | `scan_metrics.py` SCC 输出：app↔cli、cli↔diagnostics、diagnostics→hotkeys→cli、app→ui→cli→app | 拆“组合根”职责：`cli` 只解析/格式化，`app` 依赖 `cli` 而非反向；`hotkeys` 的文案改由调用方注入；逐步缩小 SCC | 无 | B1；SCC 成员数单调下降并记录基线 | 已完成（阶段 4 B1，2026-11-06） |
 | TD-ARCH-003 | 无机械依赖方向约束 | 全仓（无 `tests/test_architecture.py`，无 import-linter 配置） | P1 | `CONTRIBUTING.md:17-21` 用文字规定“纯逻辑不得 import Qt/OpenCV”；无测试/CI 检查；例外只靠代码注释（如 `hotkeys.py:2701` 的 “the cli module imports nothing from here”） | 阶段 3 加结构测试：模块→允许层的白名单 + 现有例外清单（只减不增）；报错信息给出目标层与替代方案 | 无 | B0/阶段 3；注入违规必须失败 | 已完成（阶段 3，2026-11-06） |
 | TD-ARCH-004 | 适配器反向依赖 CLI：`platform/hotkeys.py` → `cli` | `platform/hotkeys.py:2685` | P2 | `from ..cli import cli_command_text`，只为生成快捷键提示文案；platform 层因此依赖表示/入口层 | 把 `cli_command_text` 移到 `types`/`paths` 或由调用方传入；结构测试禁止 platform→cli | 无 | B2；结构测试断言 | 已完成（阶段 4 B1，2026-11-06） |
@@ -66,6 +66,7 @@
 | TD-CPLX-013 | 热键模块拆分后仍有 3 个文件 >600 行 | `hotkeys_base.py` 823、`hotkeys_macos.py` 722、`hotkeys_x11.py` 698 | P2 | 机械扫描；这是 B2 从 2,740 行拆分后的自然结果 | 按职责再拆（例如 base 的解析 vs 管理器记账；macOS 的 Carbon 绑定 vs 布局探测）；优先级低于其他批次 | 无 | B2 后续；文件降到 600 以下 | 未开始 |
 | TD-CPLX-014 | `LinuxPlatform` 类仍约 950 行（linux.py 1,100 行） | `linux.py`（facade）；类定义 | P2 | 机械扫描；B2 已把机制拆出，平台类本身仍大 | 按 X11 / Wayland 策略拆为协作对象；优先级低于其他批次 | 无 | B2 后续；类行数下降 | 未开始 |
 | TD-CPLX-015 | `vision/worker.py` 777 行，`VisionWorker` 701 行 / 30 方法 | `vision/worker.py`；类定义 | P1 | B4 机械扫描；相机侧已拆（58e3743），worker 未动 | 把推理/后处理/帧循环拆为协作对象，保持 `VisionWorker` 公共接口与线程语义 | 无 | B4 后续；类行数下降，实时路径测试全绿 | 已排期：B4 收尾（VisionWorker 协作对象拆分） |
+| TD-CI-034 | 提交的图标与锁定工具链渲染结果存在 1 LSB 像素差，无法做内容级校验 | `assets/icon.png`；`packaging/*/eye-tracker.*`；`scripts/make_icons.py` | P2 | PySide6 6.11.2 渲染两次一致，但与提交资产每通道最大差 1；跨平台光栅化未验证 | 先刷新图标资产（单独提交），再评估带容差的哈希/像素门禁；暂由 presence 门禁 + 打包 job 重渲染兜底 | 无 | B7 后续；图标资产与 lint 生成一致 | 未开始 |
 ## DUP · 重复
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
@@ -87,7 +88,7 @@
 | TD-DOC-008 | 缺根级 `ARCHITECTURE.md` | 仓库根 | P1 | 根不存在；`docs/architecture.md` 已有 215 行可迁移/引用 | 建根地图（域 + 分层 + 依赖方向规则），细节页保留 | 无 | B0；必含节测试 | 已完成（阶段 2，2026-11-06） |
 | TD-DOC-009 | 缺 `docs/QUALITY_SCORE.md` / `docs/index.md` / `docs/design-docs/`（含 core-beliefs） | `docs/` | P1 | 四个路径均不存在；规则 §2.1 要求 exec-plans + QUALITY_SCORE，§2.1/§2.2 要求索引与 core-beliefs | 阶段 2 建索引、质量评分（按 8 个业务域）、`core-beliefs.md`；`QUALITY_SCORE` 与台账 ID 关联 | 无 | B0；文件存在 + 必含节测试 | 已完成（阶段 2，2026-11-06） |
 | TD-DOC-011 | 双 README 的 PERF 数据块手工重复 | `README.md:149-160`；`README.tr.md:151-162` | P2 | 数值一致但无生成/校验；`<!-- PERF:BEGIN/END -->` 无脚本引用 | 由 benchmark 结果生成两语言块，或加测试比较数值 | 无 | B4 | 已完成（2026-11-06：双 README PERF 块数值由 docs 门禁比对，漂移即失败） |
-| TD-DOC-012 | 站点文档链接是绝对 GitHub `main` URL，无校验 | `site/index.html:248,352,360,455`；`tests/test_site.py:82-100` | P2 | 站点测试只查构建产物本地 src/href；docs 重组会静默断链 | 站点构建/测试把 `blob/main/docs/*.md` 映射回仓库路径校验存在 | 无 | B7 | 未开始 |
+| TD-DOC-012 | 站点文档链接是绝对 GitHub `main` URL，无校验 | `site/index.html:248,352,360,455`；`tests/test_site.py:82-100` | P2 | 站点测试只查构建产物本地 src/href；docs 重组会静默断链 | 站点构建/测试把 `blob/main/docs/*.md` 映射回仓库路径校验存在 | 无 | B7 | 已完成（2026-11-06：站点绝对 GitHub 链接映射回仓库路径校验 + 负例） |
 | TD-DOC-013 | 文档门禁只有 6 个用例，缺版本/锚点/命令/新鲜度校验 | `tests/test_docs.py:26,31,47,62,87,98` | P1 | 只校验配置同步、hotkey 渲染、presence 数字、setting 有 doc、相对链接/图片存在；`:91` 丢弃 anchor；D.2 的过期内容全部漏检 | 阶段 2/3 扩展：版本一致性、锚点、代码块命令、双语结构、必填节、docs/index 完整性；加 markdownlint/外链（定期） | 无 | B0/阶段 3；注入漂移必须失败 | 已完成（阶段 5，2026-11-06：锚点/命令/CHANGELOG 新鲜度 + 负例） |
 | TD-DOC-014 | 施工期规则文档（1,101 行）被 `docs/*.md` 门禁 glob 纳入产品文档检查 | `docs/turn-project-to-harness-rules.md`；`tests/test_docs.py:75` | P2 | 施工期文档 73 KB，被当作产品页做链接检查；阶段 5 后按 §14 归档 | 归档路径定在 `docs/exec-plans/completed/harness-<date>.md`；在文档门禁中显式排除归档目录 | 无 | 收官 | 已完成（§14 归档，2026-11-06；归档目录不再进产品页 glob） |
 | TD-DOC-015 | `CONTRIBUTING.md` 与未来 AGENTS/ARCHITECTURE 内容重叠 | `CONTRIBUTING.md:57-77`（Checks）、`:80-100`（Project layout） | P2 | 检查命令与目录地图将出现在 AGENTS.md；双份必然漂移 | AGENTS.md 作为唯一入口，CONTRIBUTING 链接过去；保留人类贡献流程细节 | 无 | B0 | 已完成（2026-11-06：CONTRIBUTING 命令清单收敛为 check.py --list/AGENTS 指针，去重） |
@@ -131,15 +132,13 @@
 | TD-SEC-005 | Linux 私有运行目录不可用时回退共享 `/tmp` 固定名 socket | `ipc.py:116-128,139-164,436-493,749-750` | P2 | 私有目录校验失败返回 `None` 后仍用固定名；服务端仅 `UserAccessOption`，Unix 无对端凭据校验；另一本地账户可预占 socket 名 | 私有目录不可用时 fail closed（禁用 ctl 并提示），或 `mkdtemp(0700)`；Unix 加 `SO_PEERCRED` | 修复bug | B1；测试 | 已完成（2026-11-06：无私有运行目录时 server_name 返回空、命令通道禁用；测试覆盖） |
 | TD-SEC-006 | 隐私门禁的覆盖边界与“任何网络 import/call”文案不符 | `check_privacy.py:140-144,164-165,631`；`README.md:139`；`docs/privacy.md:10`；`SECURITY.md:49-55` | P2 | 门禁自述看不到运行时拼接的模块名；默认只扫 `src/eye_tracker`；规则未覆盖 `eval/exec`、`getattr/__import__`、`openUrl`/`os.startfile` 的 URL 形态 | 增加上述规则与常量折叠；扫描范围纳入会进 bundle 的 `scripts/`/`packaging/`；文案改为“静态扫描 + bundle 扫描”（见 D16） | 无 | 阶段 3；新增规则自测 | 未开始 |
 | TD-SEC-007 | 日志与 `--trace` 文件默认 0644（settings/calibration 为 0600） | `logging_setup.py:90-104`；`trace.py:36-54`；`config.py:463-476` | P2 | RotatingFileHandler/TraceWriter 未指定权限；本机实测 0o644；日志含未捕获异常 traceback（home 绝对路径），trace 含指针/凝视数值 | 创建后 `os.chmod(0o600)` 或 `os.open(...,0600)`；目录 0700；文档说明本地可见性 | 无 | B1/阶段 5；权限断言测试 | 已完成（2026-11-06：日志/轮转/跟踪文件 0600、目录 0700；权限断言测试） |
-| TD-SEC-008 | doctor 报告只脱敏 home，非 home 绝对路径进入公开 bug 报告 | `diagnostics.py:1043-1075,1078-1093,677-687,711-727` | P2 | `_redact` 仅替换 `Path.home()`；`--config-dir /Volumes/...`、`pause_for_apps` 路径、AppImage 绝对路径会原样输出 | 额外脱敏用户名独立出现与可识别绝对路径；或提供白名单字段的 `--share` 模式 | 无（输出字段可能变） | B7；测试 | 未开始 |
+| TD-SEC-008 | doctor 报告只脱敏 home，非 home 绝对路径进入公开 bug 报告 | `diagnostics.py:1043-1075,1078-1093,677-687,711-727` | P2 | `_redact` 仅替换 `Path.home()`；`--config-dir /Volumes/...`、`pause_for_apps` 路径、AppImage 绝对路径会原样输出 | 额外脱敏用户名独立出现与可识别绝对路径；或提供白名单字段的 `--share` 模式 | 无（输出字段可能变） | B7；测试 | 已完成（2026-11-06：报告内所有绝对路径缩短为 .../basename；URL/相机节点例外；嵌套树也脱敏） |
 | TD-SEC-009 | 依赖主版本无上界，lock 已解析到 OpenCV 5 / numpy 2.5 / Qt 6.11 | `pyproject.toml:44-55`；`uv.lock:306-311,388-393,442-450,793-794` | P2 | 生产依赖只写 `>=`；lock 固定 opencv 5.0.0.93、numpy 2.5.3、PySide6 6.11.2；无 pip-audit/osv；build-system `hatchling>=1.27` 未在 lock 中 | CI 加 pip-audit/OSV/Dependency Review（与 TD-CI-017 合并执行）；记录主版本升级门槛；构建后端纳入锁定 | 无 | B7 + D17 | 未开始 |
 | TD-SEC-010 | `scripts/fetch_models.py` 默认模式联网下载 | `fetch_models.py:336-365,220-235`；`ci.yml:69`；`docs/privacy.md:27-28` | P2 | 无参数运行且模型缺失/校验失败即 `urllib.request` 下载；CI 只用 `--check`；应用不 import | 默认 verify-only，联网需显式 `--fetch`；文档标注默认行为 | 变更行为（仅开发者工具） | B7 | 已完成（2026-11-06：默认 verify-only；联网需显式 --fetch；默认不联网有测试） |
 | TD-SEC-011 | Windows 前台权限使用 `ASFW_ANY`，放宽到任意进程 | `ipc.py:211-229`；`platform/windows.py:526-527,1085` | P2 | ctl 每条命令前 `AllowSetForegroundWindow(0xFFFFFFFF)`；应用自身 activate 也用 `ASFW_ANY` | ctl 只对服务端 PID 授权；应用只对目标 hwnd 所属进程授权 | 修复bug | B1/B2；测试 | 未开始 |
 | TD-SEC-012 | FFmpeg 本地容器可能引用远程 URL（“never sends a byte”潜在缺口） | `vision/camera.py:456-459,607-611`；`docs/privacy.md:88-90` | P2（待复核） | 代码只检查输入路径字符串，不解析容器/播放列表；FFmpeg concat/HLS demuxer 可引用 URL | 在网络命名空间用构造的 `.txt/.m3u8` + `strace -f -e connect` 复核；若成立，限制容器格式或改用自有解码（见 D15） | 无（若成立需改行为） | 阶段 1 复核 / B4 | 待复核 |
-| TD-SEC-013 | `privacy.yield_camera` 默认扫描本机其他进程的摄像头占用，隐私文档未列出 | `config.py:282-286`；`platform/linux.py:2416-2455`；`platform/windows.py:1201-1220`；`docs/privacy.md` | P2 | 默认 true；Linux 扫 `/proc/<pid>/fd`，Windows 读摄像头 consent 注册表；均本地只读、未外传 | 在隐私文档 “What the app does not do” 补一句本机进程检查；保持实现不变 | 无（文档） | B0 | 未开始 |
-| TD-SEC-014 | `scripts/build_site.py --out DIR` 无保护地 `shutil.rmtree(DIR)` | `scripts/build_site.py:103-109` | P2 | 无路径白名单/空目录校验；误传 `--out /` 会删除任意目录（仅开发者/CI 手动运行） | 拒绝非白名单/非空目录，或要求 `--force` | 无 | B7 | 未开始 |
-
-
+| TD-SEC-013 | `privacy.yield_camera` 默认扫描本机其他进程的摄像头占用，隐私文档未列出 | `config.py:282-286`；`platform/linux.py:2416-2455`；`platform/windows.py:1201-1220`；`docs/privacy.md` | P2 | 默认 true；Linux 扫 `/proc/<pid>/fd`，Windows 读摄像头 consent 注册表；均本地只读、未外传 | 在隐私文档 “What the app does not do” 补一句本机进程检查；保持实现不变 | 无（文档） | B0 | 已完成（2026-11-06：docs/privacy.md 披露 yield_camera 的本机进程/注册表检查，只读、不发送） |
+| TD-SEC-014 | `scripts/build_site.py --out DIR` 无保护地 `shutil.rmtree(DIR)` | `scripts/build_site.py:103-109` | P2 | 无路径白名单/空目录校验；误传 `--out /` 会删除任意目录（仅开发者/CI 手动运行） | 拒绝非白名单/非空目录，或要求 `--force` | 无 | B7 | 已完成（2026-11-06：build_site --out 先过 _check_output_dir，拒绝符号链接/仓库/非构建目录；负例测试） |
 ## PERF · 性能与可靠性
 
 > 来源：`/tmp/harness-scan/risk-audit.md`。正面基线：vision worker `stop(timeout=3.0)` + join；
@@ -173,11 +172,11 @@
 | TD-CI-009 | `bundle.yml` 路径列表 PR/push 逐字重复两份 | `bundle.yml:15-26,30-41` | P2 | 11 项列表复制；`tests/test_build_scripts.py:926-945` 用 count==2 锁定 | YAML anchor/单一来源；测试改为结构断言 | 无 | B7 | 未开始 |
 | TD-CI-010 | 构建/测试 runner 与解释器来源漂移 | `ci.yml:85-88,109-118`；`build.yml:224,442,48-51,238-250` | P2 | 测试 `macos-latest` vs 发布 `macos-14`；Windows 浮动 `windows-latest`；ci 用 uv 托管 Python、build 用 setup-python；ci 的 uv 未显式传 matrix.python（本地实验：`.python-version` 会压过 PATH） | 测试与发布统一 runner 标签；ci 显式 `--python "${{ matrix.python }}"` 并打印版本断言 | 无 | B7 | 未开始 |
 | TD-CI-011 | lint/test job 也安装 build 组（PyInstaller/Pillow） | `pyproject.toml:82-83`；`ci.yml:42-43,115-116` | P2 | `default-groups = ["dev","build"]`；5 个 test job + lint 都 `uv sync --locked` | test/lint 用 `--no-group build` 或拆 test 组 | 无 | B7 | 已完成（2026-11-06：lint job --no-group build；test job 保留 build 组，因 test_build_scripts 直接 import PyInstaller/Pillow） |
-| TD-CI-012 | Python 支持矩阵与声明不一致 | `pyproject.toml:14,37-39,122-127`；`ci.yml:84-95`；`README.md:239`；`docs/building.md:8-13` | P2 | 允许 `<3.15`（含 3.14）但无 3.14 classifier/job；3.11/3.13 只在 ubuntu；mypy 固定 3.12；README 未写支持范围 | 明确支持级别并写进文档；CI 补组合或收敛下限/上限（成本见 D9） | 无 | B7 + B0 | 未开始 |
+| TD-CI-012 | Python 支持矩阵与声明不一致 | `pyproject.toml:14,37-39,122-127`；`ci.yml:84-95`；`README.md:239`；`docs/building.md:8-13` | P2 | 允许 `<3.15`（含 3.14）但无 3.14 classifier/job；3.11/3.13 只在 ubuntu；mypy 固定 3.12；README 未写支持范围 | 明确支持级别并写进文档；CI 补组合或收敛下限/上限（成本见 D9） | 无 | B7 + B0 | 处理中（2026-11-06：classifiers/CI matrix/mypy 版本一致性守卫已加；3.14 上界与文档决策待定） |
 | TD-CI-013 | 外部构建工具/apt 包版本未 pin | `ci.yml:71-76`；`build.yml:281-295,602-613`；`build_appimage.sh:134-155` | P2 | `choco install innosetup` 无版本；`7z` 未声明；apt 无版本；appimagetool 有 SHA pin | 预装/缓存并 pin Inno/7z/shellcheck；记录外部工具清单 | 无 | B7 | 未开始 |
 | TD-CI-014 | 发布/打包没有一条本地命令可复现；安装器冒烟是 120 行内联 PowerShell | `docs/building.md:16-128`；`build.yml:101-209,303-425` | P2 | 无 `scripts/ci-local.py`；安装/升级/PATH/自启/卸载断言无法本地跑；CHANGELOG 解析也是 100 行内联 Python | 抽 `scripts/release_notes.py`、`scripts/installer_smoke.ps1`，提供本地入口并单测 | 无 | B7 | 未开始 |
 | TD-CI-015 | CONTRIBUTING/PR 模板的本机命令与 CI 不一致 | `CONTRIBUTING.md:41-57`；`PULL_REQUEST_TEMPLATE.md:25`；`ci.yml:51-76` | P2 | shellcheck/desktop-file-validate 无命令；PR 模板 mypy 弱于 CI（缺 win32/darwin/scripts） | 增加两平台 lint 命令/`scripts/check_packaging.sh`；模板引用统一脚本 | 无 | B7 / B0 | 处理中（CONTRIBUTING 已统一命令；PR 模板与 shellcheck 本地命令待补） |
-| TD-CI-016 | CI 重新生成图标但不校验提交的图标是否最新 | `build.yml:255-256,469-470,632-633`；`make_icons.py:114-116,164-171` | P2 | CI 跑写模式；`--check` 只判断存在，不比较内容 | CI 渲染到临时目录比对 hash；`--check` 改为内容校验 | 无 | B4/B7 | 未开始 |
+| TD-CI-016 | CI 重新生成图标但不校验提交的图标是否最新 | `build.yml:255-256,469-470,632-633`；`make_icons.py:114-116,164-171` | P2 | CI 跑写模式；`--check` 只判断存在，不比较内容 | CI 渲染到临时目录比对 hash；`--check` 改为内容校验 | 无 | B4/B7 | 已完成（2026-11-06：lint job 增加 make_icons --check presence 门禁；内容比对受 Qt 跨平台 1 LSB 差异限制，见 TD-CI-034） |
 | TD-CI-017 | 无依赖漏洞 / secret / CodeQL 扫描门禁 | `.github/workflows/`（5 个 workflow，grep 无 codeql/gitleaks/pip-audit/osv） | P2 | Dependabot 只做版本更新，不阻断已知漏洞 | 增 `pip-audit`/OSV（report-only 起步）、secret scanning、CodeQL | 无 | 阶段 3 | 未开始 |
 | TD-CI-018 | 无 pre-commit / 本地提交钩子 | 仓库根无 `.pre-commit-config.yaml`；`CONTRIBUTING.md:39-57` | P2 | 所有检查靠人工 checklist | 加 `.pre-commit-config.yaml`（ruff/format/mypy/privacy），与 CI 共用版本（见 D2） | 无 | 阶段 3 | 已完成（阶段 3，2026-11-06） |
 | TD-CI-019 | mypy 不检查 `tests/` | `pyproject.toml:122-127`；`ci.yml:62-63` | P2 | `files = ["src/eye_tracker"]`；CI 仅加 scripts/packaging | 增 `mypy tests`（可先 per-file ignore） | 无 | 阶段 3 | 未开始 |
@@ -190,10 +189,10 @@
 | TD-CI-026 | release job 为触发 pages 持有 `actions: write` | `release.yml:43-49,105-112` | P2 | 同一 job 同时有 contents/id-token/attestations/actions write | 拆独立 job 只持 `actions: write`；或用 `release: published` 触发 | 无 | B7 | 未开始 |
 | TD-CI-027 | Pages 用 `pip install "pillow>=10.4"` 绕过 uv.lock | `pages.yml:47-48` | P2 | Pages job 不用 uv；每次取最新 Pillow；favicon 渲染随版本变化 | `uv sync --locked --group build` 或 `uv run --with pillow==<pin>` | 无 | B7 | 未开始 |
 | TD-CI-028 | `gh api releases/latest \|\| echo '{}'` 把鉴权/限流错误也静默降级 | `pages.yml:50-56` | P2 | 任何非零退出都写 `{}` 并部署成功；404 合理，401/403/5xx 不应 | 区分 404 与其它错误；加一次重试 | 无 | B7 | 未开始 |
-| TD-CI-029 | Dependabot 把全部 GitHub Actions 合为一个 PR | `.github/dependabot.yml:18-21` | P2 | `patterns: ["*"]` 单组；多 action 同升难定位/难审计 | 按来源/单个 action 分组，保留 SHA+版本注释更新 | 无 | 阶段 3 | 未开始 |
+| TD-CI-029 | Dependabot 把全部 GitHub Actions 合为一个 PR | `.github/dependabot.yml:18-21` | P2 | `patterns: ["*"]` 单组；多 action 同升难定位/难审计 | 按来源/单个 action 分组，保留 SHA+版本注释更新 | 无 | 阶段 3 | 已完成（2026-11-06：Dependabot 取消 actions 全量分组，一 action 一 PR） |
 | TD-CI-030 | 死配置：ruff per-file ignores 重复全局 ignore | `pyproject.toml:100,107,115` | P2 | `PLR2004` 已全局 ignore；`S101` 属 flake8-bandit，未启用 S | 删除 `tests/**` 的 PLR2004/S101，只留生效项 | 无 | 阶段 3 | 已完成（2026-11-06：tests per-file ignores 去掉全局已 ignore 的 PLR2004） |
 | TD-CI-031 | 打包/签名腐烂：`codesign --deep`、HFS+ DMG、`uname -m` 命名与 release 固定名不一致 | `make_dmg.sh:77,108-119,58-59`；`build_appimage.sh:73,82-84`；`release.yml:63-69` | P2 | Apple 长期建议显式签 nested code；HFS+ 在新 macOS 支持不确定；主机架构变化会产生错名 | 逐组件签名；评估 APFS；显式传 `--arch` 由 matrix 决定 | 无 | B7 | 未开始 |
-| TD-CI-032 | build-linux 安装未使用的 `desktop-file-utils` | `build.yml:602-613` vs `ci.yml:76` | P2 | build-linux 后续无 `desktop-file-validate` 调用 | 删除该包，或在 build-linux 真正执行校验 | 无 | B7 | 未开始 |
+| TD-CI-032 | build-linux 安装未使用的 `desktop-file-utils` | `build.yml:602-613` vs `ci.yml:76` | P2 | build-linux 后续无 `desktop-file-validate` 调用 | 删除该包，或在 build-linux 真正执行校验 | 无 | B7 | 已完成（2026-11-06：build-linux 去掉未使用的 desktop-file-utils；lint job 保留） |
 | TD-CI-033 | 分支保护/required checks 在仓库外，无法从代码确认 | GitHub Settings（仓库内无 ruleset 文件） | P2 | `ci.yml`/`bundle.yml` 是否为合并前必需检查不可见；tag 是否受保护不可见 | 人工确认并记录到 docs/CI.md；若未配置，TD-CI-001 风险更高 | 无 | D11 | 待确认 |
 
 
