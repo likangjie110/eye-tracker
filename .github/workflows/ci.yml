@@ -74,6 +74,13 @@ jobs:
       - name: Size gate (file / function / class limits)
         run: uv run --no-sync python scripts/lint_size.py --check
 
+      # A clean checkout must contain every icon file make_icons.py writes, so a
+      # deleted or forgotten asset fails here instead of in the packaging jobs.
+      # This is the existence check: re-rendering the committed artwork and
+      # comparing it needs the build group and a bit-stable Qt rasterizer (TD-CI-016).
+      - name: Committed icon files are present
+        run: uv run --no-sync python scripts/make_icons.py --check
+
       - name: Check packaging scripts
         run: |
           sudo apt-get update

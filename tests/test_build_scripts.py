@@ -316,6 +316,17 @@ def test_check_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert make_icons.main(["--check", "--out", str(tmp_path)]) == 0
 
 
+def test_committed_icons_are_present(capsys: pytest.CaptureFixture[str]) -> None:
+    """TD-CI-016: the lint job runs this check on a clean checkout.
+
+    The check is presence-only: re-rendering the artwork and comparing it needs the
+    build group (Pillow) and a bit-stable Qt rasterizer, so the packaging jobs still
+    re-render the icons and this gate catches a deleted or forgotten file.
+    """
+    assert make_icons.main(["--check"]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
 # ============================================================================= entry point
 @pytest.mark.parametrize(
     ("executable", "gui"),
@@ -701,6 +712,33 @@ def test_dependabot_keeps_actions_and_python_updated() -> None:
     assert "mediapipe" not in text
 
 
+def _dependabot_ecosystems() -> dict[str, str]:
+    """The config block of each package ecosystem in dependabot.yml, by ecosystem."""
+    text = (REPO_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    parts = re.split(r"^  - package-ecosystem: (\S+)\n", text, flags=re.MULTILINE)
+    return dict(zip(parts[1::2], parts[2::2], strict=True))
+
+
+def test_dependabot_opens_one_pull_request_per_action_update() -> None:
+    """TD-CI-029: a PR that bumps several actions at once is hard to review.
+
+    Without a group, one action bump is one pull request. Dependabot still updates
+    every occurrence of that action, in every workflow, in the same PR: the pinned
+    SHA and its "# vX.Y.Z" comment stay together (git-actions pinning is checked in
+    test_workflow_actions_are_pinned_to_commits).
+    """
+    actions = _dependabot_ecosystems()["github-actions"]
+    assert not re.search(r"^    groups:", actions, re.MULTILINE)
+
+
+def test_lint_job_checks_the_committed_icons() -> None:
+    """TD-CI-016: CI must run the icon check, on the job that does not render them."""
+    lint = _jobs(_workflow("ci.yml"))["lint"]
+    assert "python scripts/make_icons.py --check" in _joined(lint)
+    # The lint job must not write into the checkout: only the packaging jobs render.
+    assert "python scripts/make_icons.py\n" not in lint
+
+
 def test_packages_are_built_and_tested_in_one_place() -> None:
     """The Bundle check runs exactly the release build, packaging and smoke tests.
 
@@ -846,6 +884,16 @@ def test_linux_build_bundles_the_x11_libraries() -> None:
     linux = _jobs(_workflow("build.yml"))["build-linux"]
     assert {"libsm6", "libice6", "libxcb-cursor0"} <= set(_apt_packages(linux))
     assert "find dist/eye-tracker -name 'libxcb-cursor.so.0*' | grep ." in linux
+
+
+def test_linux_build_does_not_install_unused_desktop_file_tools() -> None:
+    """TD-CI-032: desktop-file-utils is only needed where the entry is validated."""
+    linux = _jobs(_workflow("build.yml"))["build-linux"]
+    assert "desktop-file-utils" not in _apt_packages(linux)
+    # The lint job keeps it: that is where desktop-file-validate runs.
+    lint = _jobs(_workflow("ci.yml"))["lint"]
+    assert "desktop-file-utils" in _apt_packages(lint)
+    assert "desktop-file-validate packaging/linux/eye-tracker.desktop" in lint
 
 
 _MACOS_MINIMUM = re.compile(r'^  MACOS_MINIMUM: "(\d+\.\d+)"$', re.MULTILINE)
@@ -1435,6 +1483,53 @@ def test_pyproject_metadata() -> None:
     assert not any("mediapipe" in dep for dep in project["dependencies"])
     assert "mediapipe" not in project["keywords"]
     assert "override-dependencies" not in data.get("tool", {}).get("uv", {})
+
+
+def _version_tuple(version: str) -> tuple[int, int]:
+    major, minor = version.split(".")
+    return int(major), int(minor)
+
+
+def _ci_python_versions() -> set[str]:
+    """The Python versions the ci.yml test matrix runs (base matrix plus include)."""
+    test = _jobs(_workflow("ci.yml"))["test"]
+    matrix = test[test.index("      matrix:\n") : test.index("    steps:\n")]
+    versions = set(re.findall(r'^          - "(\d+\.\d+)"$', matrix, re.MULTILINE))
+    versions |= set(re.findall(r'^            python: "(\d+\.\d+)"$', matrix, re.MULTILINE))
+    return versions
+
+
+def test_python_support_matches_the_ci_matrix() -> None:
+    """TD-CI-012: the Python versions users are told about are the ones CI runs.
+
+    The classifiers are the advertised support set; it must equal the test matrix.
+    requires-python must contain every tested version and start at the oldest tested
+    one, and mypy must analyse the version the lint job installs. The upper bound is
+    not compared: requires-python still allows 3.14, which has neither a classifier
+    nor a job (the remaining half of TD-CI-012; closing it needs a pyproject/docs
+    decision, not a test change).
+    """
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = data["project"]
+    match = re.fullmatch(r">=(\d+)\.(\d+),<(\d+)\.(\d+)", project["requires-python"])
+    assert match, project["requires-python"]
+    floor = (int(match.group(1)), int(match.group(2)))
+    ceiling = (int(match.group(3)), int(match.group(4)))
+    classified = {
+        classifier.rsplit(" :: ", 1)[-1]
+        for classifier in project["classifiers"]
+        if re.fullmatch(r"Programming Language :: Python :: \d+\.\d+", classifier)
+    }
+    tested = _ci_python_versions()
+    assert classified, "pyproject.toml lists no version-specific Python classifiers"
+    assert classified == tested
+    assert min(classified, key=_version_tuple) == f"{floor[0]}.{floor[1]}"
+    assert all(floor <= _version_tuple(version) < ceiling for version in tested)
+    # The lint job analyses the tested default; mypy is configured for the same one.
+    lint = _jobs(_workflow("ci.yml"))["lint"]
+    [lint_python] = re.findall(r'^          python-version: "(\d+\.\d+)"$', lint, re.MULTILINE)
+    assert lint_python in tested
+    assert data["tool"]["mypy"]["python_version"] == lint_python
 
 
 _DOCS = {"docs/troubleshooting.md", "docs/privacy.md", "docs/platform-support.md"}

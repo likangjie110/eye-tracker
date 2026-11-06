@@ -15,10 +15,10 @@ updates:
     labels:
       - dependencies
       - github-actions
-    groups:
-      github-actions:
-        patterns:
-          - "*"
+    # No groups: one action bump is one pull request. A single PR that updates
+    # several actions at once is hard to review, and if it breaks a workflow it
+    # cannot be bisected. Dependabot still updates every occurrence of that one
+    # action, in every workflow, together (the SHA and its "# vX.Y.Z" comment).
 
   - package-ecosystem: uv
     directory: /
