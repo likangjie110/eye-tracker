@@ -387,6 +387,9 @@ Sigstore 校验，仅比对同一 release 里的 `SHA256SUMS.txt`，随后 `/VER
 | P2-9 | 补全工程化说明 | L | `docs/building.md`、`docs/troubleshooting.md`、`docs/privacy.md` 更新 | 本地开发/构建/测试/调试/发布/排障各有可复制命令；CI 的每个 step 都有对应说明或“仅 CI”标注 |
 | P2-10 | 建立文档防腐 | L | 扩展 `tests/test_docs.py` + doc-gardening 说明 | 新增测试：AGENTS ≤200 行、docs/index 完整、ARCHITECTURE 必含节；对注入的漂移样例必须失败（实测） |
 
+**阶段 2 进度（2026-11-06）**：P2-1/2/3/4/7/8/10 已完成（`12a2a60`、`243e0f8`）；
+P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登记台账，转入阶段 3。
+
 **阶段 2 验收**：`pytest tests/test_docs.py` 通过；文档与代码现状一致（抽样命令）；
 `AGENTS.md` 能从仓库根找到所有深层文档；H 验收。
 
@@ -491,4 +494,7 @@ Sigstore 校验，仅比对同一 release 里的 `SHA256SUMS.txt`，随后 `/VER
 | 2026-11-06 | 阶段 1 | 决策项扩到 D17（发布门禁、GitHub Settings、CI 成本、更新器签名、FFmpeg 复核、隐私门禁范围、依赖 CVE） | — | 等 H 在确认计划时一并回答；未回答前阶段 3 不落 CI 变更 |
 | 2026-11-06 | 阶段 1 | **H 确认计划**，D1–D17 按推荐默认执行（结果见 §6.1） | — | 阶段 2 启动；仍不修改业务代码 |
 | 2026-11-06 | 阶段 1 | 远程仓库改为个人 fork：`origin = likangjie110/eye-tracker`，`upstream = bugraskl/eye-tracker`（`gh repo fork` 创建） | — | 后续推送目标为 fork；上游保留用于同步 |
+| 2026-11-06 | 阶段 2 | 建 `AGENTS.md`（≤200 行地图）、根 `ARCHITECTURE.md`（分层规则 R1–R5 + 例外表）、`docs/index.md`、`docs/design-docs/`（index/core-beliefs/decisions）、`docs/QUALITY_SCORE.md`、`completed/` 归档约定 | `12a2a60` | 常驻文档用英文（D5）；过程文档中文 |
+| 2026-11-06 | 阶段 2 | 修正 4 组过期内容与“零网络”绝对表述；architecture code map 补齐 update/paths/logging/trace；CONTRIBUTING 指向 AGENTS；`.gitignore` 忽略 `prompt-history.txt`（D6） | `243e0f8` | 文档门禁从 6 用例扩到 15：必填文档、AGENTS 行数、包覆盖、索引完整性、版本漂移、网络措辞、troubleshooting 入链；含 2 个“注入漂移必须失败”的负例 |
+| 2026-11-06 | 阶段 2 | 全量门禁：ruff / format / mypy×3 / scripts / privacy / models / pytest（2961 passed / 55 skipped） | — | 阶段 2 主体完成；剩余文档去重（TD-DOC-015）、锚点/外链（TD-DOC-013/017）转到阶段 3 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
