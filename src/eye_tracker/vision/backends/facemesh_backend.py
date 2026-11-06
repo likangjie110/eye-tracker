@@ -58,13 +58,8 @@ Feature vector (:attr:`FaceMeshBackend.feature_names`):
 
 from __future__ import annotations
 
-import logging
 import math
-import sys
 import time
-from collections import deque
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
@@ -75,7 +70,69 @@ from ... import paths
 from ...types import Observation
 from ..threads import limit_opencv_threads
 from .base import BackendUnavailable, VisionBackend
-from .face_geometry import FaceGeometry, GeometryError, load_face_geometry
+from .face_geometry import GeometryError, load_face_geometry
+
+# The helpers moved to the three modules below; imported here so that
+# ``facemesh_backend`` stays the import point for callers and tests (some of the
+# private names are only used by tests, hence the re-export noqa).
+from .facemesh_detection import (  # noqa: F401 - re-exported
+    Box,
+    _det_box,
+    _det_centre,
+    _det_score,
+    _det_side,
+    _Drawing,
+    _in_crop,
+    _sigmoid,
+)
+from .facemesh_geometry import (  # noqa: F401 - re-exported
+    _EYE_LINE,
+    _MESH_POINTS,
+    _MIN_EYE_WIDTH_PX,
+    _NUM_LANDMARKS,
+    BLINK_BASELINE_MIN_SAMPLES,
+    BLINK_BASELINE_RATIO,
+    BLINK_BASELINE_WINDOW,
+    BLINK_MIN_OPENNESS,
+    BLINK_OPENNESS,
+    CATCH_UP_MIN_LOGIT,
+    EYE_A,
+    EYE_B,
+    INPUT_SIZE,
+    MIN_ROI_SIDE,
+    PRIMARY_CENTRE_WEIGHT,
+    ROI_CATCH_UP_SHIFT,
+    ROI_SCALE,
+    ROI_SETTLE_SCALE,
+    ROI_SETTLE_SHIFT,
+    BlinkDetector,
+    EyeMetrics,
+    HeadPose,
+    PoseEstimator,
+    Roi,
+    _eye_line_angle,
+    camera_matrix,
+    crop_caught_up,
+    crop_settled,
+    eye_metrics,
+    pose_from_rotation,
+    primary_score,
+    roi_from_detection,
+    roi_from_landmarks,
+)
+from .facemesh_model import (  # noqa: F401 - re-exported
+    _OUTPUT_NAMES,
+    _SELF_TEST_FLAG,
+    _SELF_TEST_FLAG_TOLERANCE,
+    _SELF_TEST_IRIS,
+    _SELF_TEST_MEAN,
+    _SELF_TEST_PX_TOLERANCE,
+    _check_landmark_net,
+    _read_tflite,
+    _windows_short_path,
+    load_landmark_net,
+    self_test_blob,
+)
 from .lite_backend import create_yunet
 from .overlay import (
     COLOR_BOX,
@@ -91,21 +148,15 @@ from .overlay import (
     to_bgr,
 )
 
-log = logging.getLogger(__name__)
-
 MODEL_FILE = "face_landmarks_detector.tflite"
 GEOMETRY_FILE = "geometry_pipeline_metadata_landmarks.binarypb"
 
-#: Side of the square network input in pixels.
-INPUT_SIZE = 256
-#: Crop side relative to the longer side of the face (MediaPipe uses 1.5).
-ROI_SCALE = 1.5
 #: Face-presence probability below which the tracked face counts as lost.
 PRESENCE_THRESHOLD = 0.5
-#: A crop smaller than this (frame pixels) is too coarse to track.
-MIN_ROI_SIDE = 24.0
+
 #: YuNet input width for (re-)acquiring the face.
 DETECT_WIDTH = 320
+
 #: YuNet input width while the shoulder guard counts faces. Measured with a face
 #: photo scaled into a 640x480 frame, YuNet finds faces from about 20 px wide at
 #: 320 px input, 14 px at 480 and 12 px at 640. With a typical 65-78° webcam a
@@ -113,19 +164,18 @@ DETECT_WIDTH = 320
 #: 480 px reaches onlookers about 4 m away (320 px: about 2.5-3 m) for half the
 #: cost of 640 px (about 13 ms against 26 ms on one core).
 GUARD_DETECT_WIDTH = 480
+
 #: Minimum seconds between shoulder-guard face counts; the count is reused in
 #: between (the guard itself waits seconds before reacting).
 GUARD_PERIOD_S = 0.5
+
 #: YuNet detections below this confidence are ignored (and not counted as faces).
 DETECTION_SCORE = 0.6
+
 #: A face elsewhere in the image whose primary score (see :func:`primary_score`)
 #: is this much higher than the tracked face's takes over as the primary face.
 PRIMARY_SWITCH_RATIO = 1.3
-#: How much less a face at the image corner counts than the same face at the
-#: centre when choosing the primary face (the user usually sits in front of the
-#: camera; posters, TVs and passers-by are usually off to the side). Mild on
-#: purpose: size dominates, centrality decides between similar faces.
-PRIMARY_CENTRE_WEIGHT = 0.3
+
 #: With the shoulder guard off, YuNet looks for a better primary face this often
 #: (seconds) while a face is tracked, so a face acquired while the user was away
 #: (a poster, a colleague) does not keep the role once the user is back. One
@@ -138,6 +188,7 @@ PRIMARY_CHECK_S = 1.5
 #: ... and this soon after a face was (re-)acquired, when the user may still be
 #: on the way into the picture.
 PRIMARY_RECHECK_S = 0.5
+
 #: A landmark pass whose presence logit is below this is a partial fit at best,
 #: although it clears the presence threshold. Measured on a face photo: a hand
 #: over the eyes scored 3.3-3.8, over the mouth 2.8-3.2 (the next pass rejected
@@ -149,10 +200,12 @@ PRIMARY_RECHECK_S = 0.5
 #: the presence threshold), and it does not count as settled (the motion gate
 #: repeated one, 5° off, for seconds, although the next pass rejected it).
 CONFIDENT_LOGIT = 8.0
+
 #: YuNet's box side divided by the side of the 468-point landmark box, for the
 #: same face (measured 1.10-1.18 at 320 and 480 px input). Converts a tracked
 #: face's size to YuNet's scale when YuNet itself did not report it.
 YUNET_TO_MESH_SIDE = 1.13
+
 #: When the best detection fails the landmark network (a profile, a hand over the
 #: face), up to this many detections are tried in all ...
 MAX_SEED_CANDIDATES = 3
@@ -162,6 +215,7 @@ MAX_SEED_CANDIDATES = 3
 #: detection is the face tracked until it became unreadable (see
 #: ``FaceMeshBackend._acquire``).
 SEED_CANDIDATE_MIN_RATIO = 0.5
+
 #: YuNet's eye points hardly follow a rolled head at 320 px (a 55° roll reads as
 #: about 5°), and the landmark network rejects crops more than about 40° off, or
 #: worse, fits them with a partly rolled face. A seed that fails, or passes with
@@ -179,68 +233,18 @@ ROLL_RETRY_BELOW_LOGIT = 10.0
 #: ... at most this often (seconds) when it does not help, so a face the network
 #: can never read (a profile) does not cost two extra inferences on every frame.
 ROLL_RETRY_PERIOD_S = 2.0
-#: A crop counts as settled on the face when the landmarks it produced ask for a
-#: crop whose centre is at most this share of its side away ...
-ROI_SETTLE_SHIFT = 0.04
-#: ... and whose side differs by at most this share (still-face jitter stays
-#: below about 0.01 for both).
-ROI_SETTLE_SCALE = 0.035
-#: A crop whose centre is further off than this share of its side (or whose side
-#: is off by more than ROI_SETTLE_SCALE) is re-run within the same frame. It
-#: pulls the landmarks towards where the face was: by up to 10° of pitch and 0.1
-#: of iris travel after a 5-8 cm posture shift between two frames, and upward
-#: jumps show up mostly as a changed side, because the network follows them only
-#: a fraction of the way. Between the two shift limits the bias stays below
-#: about 1.5° and the next frame removes it (the motion gate then does not hold
-#: the observation, see ``VisionBackend.settled``), so a steadily moving head
-#: costs no extra inference.
-ROI_CATCH_UP_SHIFT = 0.08
-#: ... provided that the network is sure it sees a face in the crop (a presence
-#: logit of at least this). Far behind a large jump, an upward one especially,
-#: the network follows the face only a fraction of the way per pass, so a crop
-#: can ask for a shift below ROI_CATCH_UP_SHIFT while its landmarks are still
-#: 35-45 px (12-20° of pitch) off. Measured on drawn faces after such jumps,
-#: those crops scored a logit of 4-6, crops in the same band that were on the
-#: face (landmarks within 1.5 px) 19-23; for photos see ROLL_RETRY_BELOW_LOGIT.
-#: Without this, which of the two a jump ended on depended on pixel-level details
-#: (a 1 px shift of the face, sensor noise, the CPU's floating-point rounding).
-CATCH_UP_MIN_LOGIT = 10.0
+
 #: After this many analysed frames in a row whose crop did not settle, the
 #: result counts as settled anyway. A crop catching up with a jump settles
 #: within a frame or two; one that keeps shifting slightly on a still picture is
 #: jitter, and the motion gate must be able to hold it to keep the CPU use low.
 MAX_UNSETTLED_FRAMES = 3
-#: Mean eye openness (lid gap / eye width) below which the eyes always count as
-#: closed. Open eyes measure roughly 0.2-0.35.
-BLINK_OPENNESS = 0.12
-#: Once the user's own open-eye baseline is known, the blink threshold becomes
-#: ``BLINK_BASELINE_RATIO * baseline``, clamped to [BLINK_MIN_OPENNESS,
-#: BLINK_OPENNESS]: narrow eyes or a downward gaze never read as a blink.
-BLINK_MIN_OPENNESS = 0.08
-BLINK_BASELINE_RATIO = 0.5
-#: Open-eye samples needed before the baseline is trusted, and how many are kept.
-BLINK_BASELINE_MIN_SAMPLES = 30
-BLINK_BASELINE_WINDOW = 90
+
 #: A face whose landmark box comes this close (normalised) to the image edge is
 #: probably cut off, so its landmarks are less trustworthy.
 BORDER_MARGIN = 0.01
 MAX_FACES_LIMIT = 5
 
-_OUTPUT_NAMES = ["Identity", "Identity_1"]  # landmarks, face-presence logit
-_NUM_LANDMARKS = 478
-_MESH_POINTS = 468
-_MIN_EYE_WIDTH_PX = 1.5
-
-# Per eye: (first corner, second corner, iris centre, upper lid, lower lid).
-# Landmarks are numbered anatomically, and in a camera image the subject's
-# right eye (33/133) appears on the left. Taking 33 -> 133 for one eye and
-# 362 -> 263 for the other makes both corner axes point towards image-right, so
-# the iris coordinate moves in the same direction in both eyes and can be
-# averaged.
-EYE_A = (33, 133, 468, 159, 145)
-EYE_B = (362, 263, 473, 386, 374)
-#: Outer eye corners on the image-left and image-right side: the eye line.
-_EYE_LINE = (33, 263)
 _NOSE_TIP = 4
 #: Preview arrow showing where the face points: 5 cm out of the face (the pose
 #: model frame's -z axis).
@@ -250,510 +254,6 @@ _EYE_A_CONTOUR = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 
 _EYE_B_CONTOUR = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
 _IRIS_A = (468, 469, 470, 471, 472)
 _IRIS_B = (473, 474, 475, 476, 477)
-
-Box = tuple[float, float, float, float]
-
-
-# ----------------------------------------------------------------------------
-# Pure helpers (unit-tested without the network)
-
-
-@dataclass(frozen=True, slots=True)
-class EyeMetrics:
-    """Iris position and lid opening, averaged over both eyes.
-
-    ``iris_h`` is the iris centre projected onto the corner-to-corner axis
-    (0 at the image-left corner, 1 at the image-right corner, ~0.5 looking
-    straight). ``iris_v`` is the signed distance from that axis in eye widths
-    (positive = towards the bottom of the image). ``openness`` is the lid gap in
-    eye widths.
-    """
-
-    iris_h: float
-    iris_v: float
-    openness: float
-
-
-def eye_metrics(points_px: np.ndarray) -> EyeMetrics | None:
-    """Compute :class:`EyeMetrics` from landmark positions in pixels.
-
-    ``points_px`` has shape ``(478, 2)`` (or more rows / columns). Pixel units
-    matter: normalised landmark coordinates are anisotropic for non-square
-    images. Returns ``None`` when the eyes are degenerate (too small).
-    """
-    if points_px.shape[0] < _NUM_LANDMARKS:
-        return None
-    h_values: list[float] = []
-    v_values: list[float] = []
-    openness: list[float] = []
-    for c0, c1, iris, lid_top, lid_bottom in (EYE_A, EYE_B):
-        a = points_px[c0, :2]
-        axis = points_px[c1, :2] - a
-        width = float(math.hypot(axis[0], axis[1]))
-        if not width >= _MIN_EYE_WIDTH_PX:  # also rejects NaN
-            return None
-        u = axis / width
-        normal = np.array([-u[1], u[0]])  # image-down for an upright face
-        rel = points_px[iris, :2] - a
-        h_values.append(float(rel @ u) / width)
-        v_values.append(float(rel @ normal) / width)
-        lid = points_px[lid_top, :2] - points_px[lid_bottom, :2]
-        openness.append(float(math.hypot(lid[0], lid[1])) / width)
-    return EyeMetrics(
-        iris_h=sum(h_values) / 2.0,
-        iris_v=sum(v_values) / 2.0,
-        openness=sum(openness) / 2.0,
-    )
-
-
-class BlinkDetector:
-    """Decides whether the eyes are closed, relative to the user's own eyes.
-
-    A fixed openness threshold misfires for narrow eyes and for a downward gaze
-    (the lids close in when looking at a monitor below the camera). The detector
-    keeps a rolling median of open-eye readings and, once it has enough of them,
-    flags a blink below half of that baseline. The threshold never rises above
-    the absolute :data:`BLINK_OPENNESS`, so wide eyes behave as before.
-    """
-
-    def __init__(
-        self,
-        absolute: float = BLINK_OPENNESS,
-        minimum: float = BLINK_MIN_OPENNESS,
-        ratio: float = BLINK_BASELINE_RATIO,
-        min_samples: int = BLINK_BASELINE_MIN_SAMPLES,
-        window: int = BLINK_BASELINE_WINDOW,
-    ) -> None:
-        self.absolute = float(absolute)
-        self.minimum = float(minimum)
-        self.ratio = float(ratio)
-        self.min_samples = max(1, int(min_samples))
-        self._history: deque[float] = deque(maxlen=max(self.min_samples, int(window)))
-
-    @property
-    def threshold(self) -> float:
-        """Current openness threshold below which the eyes count as closed."""
-        if len(self._history) < self.min_samples:
-            return self.absolute
-        baseline = float(np.median(np.fromiter(self._history, dtype=np.float64)))
-        return min(self.absolute, max(self.minimum, self.ratio * baseline))
-
-    def update(self, openness: float) -> bool:
-        """Classify one reading (``True`` = closed) and learn from open eyes.
-
-        Until the baseline exists every finite reading is learnt, not only those
-        above the absolute threshold: eyes that stay below it (narrow eyes, a
-        monitor below the camera) would otherwise never teach the detector
-        anything and read as closed forever. The median shrugs off the few blinks
-        among them. Afterwards only open eyes are learnt, so a long stretch of
-        closed eyes cannot drag the baseline down.
-        """
-        if not math.isfinite(openness):
-            return False
-        closed = openness < self.threshold
-        if not closed or len(self._history) < self.min_samples:
-            self._history.append(openness)
-        return closed
-
-    def reset(self) -> None:
-        self._history.clear()
-
-
-@dataclass(frozen=True, slots=True)
-class Roi:
-    """A square, rotated crop of the frame that the landmark network sees.
-
-    ``(cx, cy)`` is the centre and ``side`` the side length in frame pixels;
-    ``angle`` is the direction of the eye line in degrees (image coordinates,
-    y down), which the crop rotates to horizontal.
-    """
-
-    cx: float
-    cy: float
-    side: float
-    angle: float
-
-    def transform(self) -> np.ndarray:
-        """2x3 affine matrix mapping frame pixels to network-input pixels."""
-        # Positive angles rotate counter-clockwise on screen, which levels an eye
-        # line that descends towards image-right by that angle.
-        m = cv2.getRotationMatrix2D((self.cx, self.cy), self.angle, INPUT_SIZE / self.side)
-        m[0, 2] += INPUT_SIZE / 2.0 - self.cx
-        m[1, 2] += INPUT_SIZE / 2.0 - self.cy
-        return m
-
-    def valid(self, width: int, height: int) -> bool:
-        """True when the crop is finite, large enough and centred inside the frame."""
-        return (
-            all(math.isfinite(v) for v in (self.cx, self.cy, self.side, self.angle))
-            and self.side >= MIN_ROI_SIDE
-            and 0.0 <= self.cx < width
-            and 0.0 <= self.cy < height
-        )
-
-
-def _eye_line_angle(left: np.ndarray, right: np.ndarray) -> float:
-    return math.degrees(math.atan2(float(right[1] - left[1]), float(right[0] - left[0])))
-
-
-def roi_from_detection(face: np.ndarray) -> Roi:
-    """Crop for a YuNet detection row (pixels: box, right eye, left eye, ...)."""
-    x, y, w, h = (float(v) for v in face[:4])
-    # YuNet's "right eye" is the one on the image left.
-    angle = _eye_line_angle(face[4:6], face[6:8])
-    return Roi(x + w / 2.0, y + h / 2.0, max(w, h) * ROI_SCALE, angle)
-
-
-def roi_from_landmarks(points_px: np.ndarray) -> Roi:
-    """Crop for tracking a face into the next frame (MediaPipe's rule)."""
-    mesh = points_px[:_MESH_POINTS, :2]
-    x0, y0 = mesh.min(axis=0)
-    x1, y1 = mesh.max(axis=0)
-    angle = _eye_line_angle(points_px[_EYE_LINE[0]], points_px[_EYE_LINE[1]])
-    side = max(float(x1 - x0), float(y1 - y0)) * ROI_SCALE
-    return Roi(float(x0 + x1) / 2.0, float(y0 + y1) / 2.0, side, angle)
-
-
-def crop_settled(
-    used: Roi, wanted: Roi, shift: float = ROI_SETTLE_SHIFT, scale: float = ROI_SETTLE_SCALE
-) -> bool:
-    """True when ``wanted`` (the crop the landmarks ask for) matches ``used``.
-
-    Landmarks from a crop that is centred on the face are trustworthy; when the
-    face sits off-centre in the crop (it moved since the crop was chosen) they
-    are pulled towards the crop centre, and the crop they ask for is off by a
-    noticeable share of its side. ``shift`` and ``scale`` are the tolerated
-    centre offset and side change, as shares of ``used.side`` (see
-    :data:`ROI_SETTLE_SHIFT`).
-    """
-    if not (used.side > 0.0 and all(math.isfinite(v) for v in (wanted.cx, wanted.cy, wanted.side))):
-        return False
-    offset = math.hypot(wanted.cx - used.cx, wanted.cy - used.cy) / used.side
-    return offset <= shift and abs(wanted.side / used.side - 1.0) <= scale
-
-
-def crop_caught_up(used: Roi, wanted: Roi, logit: float) -> bool:
-    """True when a frame's landmark passes may stop at the crop ``used``.
-
-    That is when it is settled on the face (:func:`crop_settled`), or when it is
-    catching up with a moving face (``wanted`` within :data:`ROI_CATCH_UP_SHIFT`)
-    and the network is confident that it sees a face in it (``logit``, the
-    presence logit of the pass on ``used``, of at least
-    :data:`CATCH_UP_MIN_LOGIT`). See ``FaceMeshBackend._settle``.
-    """
-    if crop_settled(used, wanted):
-        return True
-    return logit >= CATCH_UP_MIN_LOGIT and crop_settled(used, wanted, shift=ROI_CATCH_UP_SHIFT)
-
-
-def primary_score(side: float, cx: float, cy: float, width: int, height: int) -> float:
-    """How strongly a face of ``side`` pixels centred at ``(cx, cy)`` claims to be the user.
-
-    The face side, reduced by up to :data:`PRIMARY_CENTRE_WEIGHT` the further the
-    face is from the image centre (0 at the centre, the full weight at a corner).
-    """
-    half_w, half_h = width / 2.0, height / 2.0
-    offset = math.hypot((cx - half_w) / half_w, (cy - half_h) / half_h) / math.sqrt(2.0)
-    return side * (1.0 - PRIMARY_CENTRE_WEIGHT * min(offset, 1.0))
-
-
-@dataclass(frozen=True, slots=True)
-class HeadPose:
-    """Head rotation (degrees) and position (centimetres), see the module docs."""
-
-    yaw: float
-    pitch: float
-    roll: float
-    tx: float
-    ty: float
-    tz: float
-
-
-def pose_from_rotation(rotation: np.ndarray, translation: np.ndarray | Sequence[float]) -> HeadPose:
-    """:class:`HeadPose` from a model-to-camera rotation matrix and translation.
-
-    The model frame is the canonical face flipped to OpenCV's camera convention
-    (x right, y down, z away from the camera), so a face looking straight into
-    the camera has the identity rotation.
-    """
-    r = np.asarray(rotation, dtype=np.float64).reshape(3, 3)
-    nose = -r[:, 2]  # the face's forward direction, towards the camera when frontal
-    yaw = math.degrees(math.atan2(nose[0], -nose[2]))
-    pitch = math.degrees(math.atan2(nose[1], math.hypot(nose[0], nose[2])))
-    # Direction of the model x axis in the image; image y points down, so a
-    # counter-clockwise tilt lifts its right end (negative y).
-    roll = math.degrees(math.atan2(-r[1, 0], r[0, 0]))
-    tx, ty, tz = (float(v) for v in np.asarray(translation, dtype=np.float64).ravel()[:3])
-    return HeadPose(yaw, pitch, roll, tx, ty, tz)
-
-
-def camera_matrix(width: int, height: int) -> np.ndarray:
-    """Approximate pinhole intrinsics: focal length = longer side, centred."""
-    f = float(max(width, height))
-    return np.array([[f, 0.0, width / 2.0], [0.0, f, height / 2.0], [0.0, 0.0, 1.0]])
-
-
-class PoseEstimator:
-    """Head pose by fitting the canonical face mesh to the landmarks."""
-
-    def __init__(self, geometry: FaceGeometry) -> None:
-        ids = np.array(geometry.basis_ids, dtype=np.intp)
-        self._ids = ids
-        # Canonical frame (x right, y up, z towards the camera) -> OpenCV-style
-        # object frame (x right, y down, z away from the camera).
-        self._object = np.ascontiguousarray(geometry.vertices[ids] * (1.0, -1.0, -1.0))
-        self._rvec: np.ndarray | None = None
-        self._tvec: np.ndarray | None = None
-        self._size: tuple[int, int] | None = None
-        self.camera: np.ndarray = camera_matrix(1, 1)
-
-    @property
-    def rvec(self) -> np.ndarray | None:
-        return self._rvec
-
-    @property
-    def tvec(self) -> np.ndarray | None:
-        return self._tvec
-
-    def reset(self) -> None:
-        """Forget the previous pose (a new face or a new frame size)."""
-        self._rvec = None
-        self._tvec = None
-
-    def estimate(self, points_px: np.ndarray, width: int, height: int) -> HeadPose | None:
-        """Pose for ``(478, 2)`` landmark pixels in a ``width`` x ``height`` frame."""
-        if (width, height) != self._size:
-            self._size = (width, height)
-            self.camera = camera_matrix(width, height)
-            self.reset()
-        image = np.ascontiguousarray(points_px[self._ids, :2], dtype=np.float64)
-        if not np.all(np.isfinite(image)):
-            self.reset()
-            return None
-        solution = None
-        if self._rvec is not None and self._tvec is not None:
-            solution = self._solve(image, cv2.SOLVEPNP_ITERATIVE, self._rvec, self._tvec)
-        if solution is None:
-            # A global solver for a fresh face (or when the tracked solution
-            # drifted into an implausible one).
-            solution = self._solve(image, cv2.SOLVEPNP_SQPNP)
-        if solution is None:
-            self.reset()
-            return None
-        self._rvec, self._tvec = solution
-        rotation, _ = cv2.Rodrigues(self._rvec)
-        return pose_from_rotation(rotation, self._tvec)
-
-    def _solve(
-        self,
-        image: np.ndarray,
-        method: int,
-        rvec: np.ndarray | None = None,
-        tvec: np.ndarray | None = None,
-    ) -> tuple[np.ndarray, np.ndarray] | None:
-        guess = rvec is not None and tvec is not None
-        try:
-            ok, r, t = cv2.solvePnP(
-                self._object,
-                image,
-                self.camera,
-                None,
-                rvec.copy() if rvec is not None else None,
-                tvec.copy() if tvec is not None else None,
-                useExtrinsicGuess=guess,
-                flags=method,
-            )
-        except cv2.error:
-            log.debug("solvePnP failed", exc_info=True)
-            return None
-        if not ok or not np.all(np.isfinite(r)) or not np.all(np.isfinite(t)):
-            return None
-        rotation, _ = cv2.Rodrigues(r)
-        # In front of the camera and facing it (nose towards the lens).
-        if float(t.ravel()[2]) <= 0.0 or float(rotation[2, 2]) <= 0.0:
-            return None
-        return r.reshape(3, 1), t.reshape(3, 1)
-
-
-# ----------------------------------------------------------------------------
-# Model loading
-
-
-def _read_tflite(model: str | np.ndarray) -> cv2.dnn.Net:
-    # OpenCV 5 defaults to its new graph engine, which cannot deliver this
-    # network's named outputs correctly; the classic engine is exact. OpenCV 4.x
-    # only has the classic engine (and no `engine` argument).
-    if hasattr(cv2.dnn, "ENGINE_CLASSIC"):
-        return cv2.dnn.readNetFromTFLite(model, engine=cv2.dnn.ENGINE_CLASSIC)
-    return cv2.dnn.readNetFromTFLite(model)
-
-
-def _windows_short_path(path: Path) -> str | None:
-    """The 8.3 alias of ``path`` if Windows provides a pure-ASCII one."""
-    if sys.platform != "win32":
-        return None
-    import ctypes
-
-    buffer = ctypes.create_unicode_buffer(32768)
-    get_short = ctypes.windll.kernel32.GetShortPathNameW  # type: ignore[attr-defined]
-    length = int(get_short(str(path), buffer, len(buffer)))
-    if 0 < length < len(buffer) and buffer.value.isascii():
-        return str(buffer.value)
-    return None
-
-
-def self_test_blob() -> np.ndarray:
-    """The fixed input of the load-time self-test: a different gradient per channel.
-
-    Asymmetric on purpose, so that a runtime that mixes up the tensor layout or
-    the channel order produces visibly different landmarks.
-    """
-    ramp = np.linspace(0.0, 1.0, INPUT_SIZE, dtype=np.float32)
-    xx, yy = np.meshgrid(ramp, ramp)
-    return np.stack([xx, yy, (xx + yy) / 2.0])[None]
-
-
-#: Reference outputs for :func:`self_test_blob`, recorded with OpenCV 5.0's
-#: classic engine (MediaPipe's own runtime agrees to within 0.005 of the frame
-#: on real faces): presence logit, mean landmark (x, y) and iris 468 (x, y) in
-#: network-input pixels.
-_SELF_TEST_FLAG = -8.30
-_SELF_TEST_MEAN = (127.64, 116.29)
-_SELF_TEST_IRIS = (95.10, 85.45)
-_SELF_TEST_PX_TOLERANCE = 2.0
-_SELF_TEST_FLAG_TOLERANCE = 1.5
-
-
-def _check_landmark_net(net: cv2.dnn.Net) -> None:
-    """Make sure the network runs and computes what it should.
-
-    Some OpenCV engines load the model but return the wrong tensors (OpenCV
-    5.0's new engine, for example); comparing one fixed input against reference
-    values turns such a runtime into a clean "unavailable" instead of garbage
-    landmarks.
-
-    Raises:
-        ValueError: The outputs have the wrong shape or values.
-    """
-    net.setInput(self_test_blob())
-    landmarks, flag = net.forward(_OUTPUT_NAMES)
-    if landmarks.size != _NUM_LANDMARKS * 3 or flag.size != 1:
-        raise ValueError(
-            f"unexpected output shapes {landmarks.shape} and {flag.shape} (not the landmark model)"
-        )
-    points = landmarks.reshape(-1, 3)[:, :2].astype(np.float64)
-    mean = points.mean(axis=0)
-    iris = points[EYE_A[2]]
-    logit = float(flag.ravel()[0])
-    worst = max(
-        float(np.abs(mean - _SELF_TEST_MEAN).max()), float(np.abs(iris - _SELF_TEST_IRIS).max())
-    )
-    if not (
-        worst <= _SELF_TEST_PX_TOLERANCE
-        and abs(logit - _SELF_TEST_FLAG) <= _SELF_TEST_FLAG_TOLERANCE
-    ):
-        raise ValueError(
-            f"the model computes wrong values (landmarks off by {worst:.1f} px, "
-            f"presence logit {logit:.2f} instead of {_SELF_TEST_FLAG:.2f})"
-        )
-
-
-def load_landmark_net(path: Path) -> cv2.dnn.Net:
-    """Load and self-test the landmark network.
-
-    OpenCV opens file paths with the ANSI code page on Windows, so non-ASCII
-    paths fail there; in-memory loading avoids that, but OpenCV 5.0 ignores the
-    engine choice for in-memory models (and its default engine cannot run this
-    network). The loaders are therefore tried in order: the path itself (unless
-    it is non-ASCII on Windows), the in-memory model, and the Windows 8.3 short
-    path. Each result must pass :func:`_check_landmark_net`.
-
-    Raises:
-        BackendUnavailable: The model is missing or cannot be run correctly.
-    """
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        raise BackendUnavailable(
-            f"Face landmark model not found at {path} (run scripts/fetch_models.py)"
-        ) from exc
-    loaders: list[tuple[str, Callable[[], cv2.dnn.Net]]] = []
-    text = str(path)
-    windows_unsafe = sys.platform == "win32" and not text.isascii()
-    if not windows_unsafe:
-        loaders.append(("path", lambda: _read_tflite(text)))
-    loaders.append(("memory", lambda: _read_tflite(np.frombuffer(data, dtype=np.uint8))))
-    if windows_unsafe:
-        short = _windows_short_path(path)
-        if short is not None:
-            loaders.append(("short path", lambda: _read_tflite(short)))
-    errors: list[str] = []
-    for label, load in loaders:
-        try:
-            net = load()
-            _check_landmark_net(net)
-        except (cv2.error, ValueError, TypeError) as exc:
-            detail = str(exc).strip().splitlines()[-1] if str(exc).strip() else type(exc).__name__
-            errors.append(f"{label}: {detail}")
-            log.debug("Loading the landmark model via %s failed", label, exc_info=True)
-            continue
-        return net
-    hint = (
-        " (moving the app to a folder with an ASCII-only path may help)" if windows_unsafe else ""
-    )
-    raise BackendUnavailable(
-        f"OpenCV {cv2.__version__} cannot run the face landmark model{hint}: " + "; ".join(errors)
-    )
-
-
-# ----------------------------------------------------------------------------
-# The backend
-
-
-@dataclass(slots=True)
-class _Drawing:
-    """What ``annotate`` needs from the last processed frame."""
-
-    timestamp: float
-    points: np.ndarray | None  # (478, 2) normalised, primary face
-    others: list[Box]  # normalised boxes of the other faces
-    rvec: np.ndarray | None
-    tvec: np.ndarray | None
-    camera: np.ndarray | None
-
-
-def _det_box(face: np.ndarray, width: int, height: int) -> Box:
-    """Clipped, normalised ``(x, y, w, h)`` of a YuNet row in frame pixels."""
-    x, y, w, h = (float(v) for v in face[:4])
-    x0, y0 = max(x / width, 0.0), max(y / height, 0.0)
-    x1, y1 = min((x + w) / width, 1.0), min((y + h) / height, 1.0)
-    return (x0, y0, max(x1 - x0, 0.0), max(y1 - y0, 0.0))
-
-
-def _det_side(face: np.ndarray) -> float:
-    return max(float(face[2]), float(face[3]))
-
-
-def _det_centre(face: np.ndarray) -> tuple[float, float]:
-    return float(face[0] + face[2] / 2.0), float(face[1] + face[3] / 2.0)
-
-
-def _det_score(face: np.ndarray, width: int, height: int) -> float:
-    return primary_score(_det_side(face), *_det_centre(face), width, height)
-
-
-def _in_crop(face: np.ndarray, roi: Roi) -> bool:
-    """True when the detection's centre lies inside the (unrotated) crop square."""
-    cx, cy = _det_centre(face)
-    half = roi.side / 2.0
-    return abs(cx - roi.cx) < half and abs(cy - roi.cy) < half
-
-
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        return 1.0 / (1.0 + math.exp(-x))
-    e = math.exp(x)
-    return e / (1.0 + e)
 
 
 class FaceMeshBackend(VisionBackend):

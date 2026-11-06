@@ -22,6 +22,7 @@ from eye_tracker import paths
 from eye_tracker.types import Observation
 from eye_tracker.vision.backends import BackendUnavailable
 from eye_tracker.vision.backends import facemesh_backend as fm
+from eye_tracker.vision.backends import facemesh_model as fm_model
 from eye_tracker.vision.backends.face_geometry import FaceGeometry, load_face_geometry
 from eye_tracker.vision.backends.facemesh_backend import (
     EYE_A,
@@ -403,7 +404,7 @@ def test_landmark_model_wrong_network(tmp_path: Path) -> None:
 
 def test_landmark_self_test_rejects_wrong_values(monkeypatch: pytest.MonkeyPatch) -> None:
     """A runtime that computes different numbers must not be trusted."""
-    monkeypatch.setattr(fm, "_SELF_TEST_MEAN", (40.0, 200.0))
+    monkeypatch.setattr(fm_model, "_SELF_TEST_MEAN", (40.0, 200.0))
     with pytest.raises(BackendUnavailable, match="wrong values"):
         load_landmark_net(paths.model_path(fm.MODEL_FILE))
 
