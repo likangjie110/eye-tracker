@@ -95,7 +95,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
 
 from .. import __version__, paths
 from ..config import Settings
@@ -129,12 +128,19 @@ from ..types import (
 )
 from .calibration_select import calibration_useful, match_profile, with_camera_identity
 from .camera_yield import YieldInputs, should_yield
+from .controller_hotkeys import ControllerHotkeysMixin
 from .controller_policy import (
     TICK_IDLE_MS,
     derive_state,
     max_faces,
-    may_interrupt,
     tick_interval,
+)
+from .controller_screens import (
+    LOCK_POLL_S,
+    WARP_BACKOFF_S,  # noqa: F401 - re-exported for the controller tests
+    WARP_REFUSAL_LIMIT,  # noqa: F401 - re-exported for the controller tests
+    WRONG_SWITCH_S,
+    ControllerScreensMixin,
 )
 from .controller_support import (
     CursorLike,
@@ -146,12 +152,11 @@ from .controller_support import (
     _camera_fps,
     _finite,
     _known_size,
-    _layout_key,
     _make_vision_worker,
     _named_backend_gaze_indices,
     _pane_providers,
     _same_handle,
-    _same_monitor,
+    _same_monitor,  # noqa: F401 - re-exported for the controller tests
     _save_privacy_mode,
     _saved_privacy_mode,
     _source_factory,
@@ -160,7 +165,6 @@ from .controller_support import (
 )
 from .decision import Decision, SwitchConfig, SwitchDecider
 from .guard import GuardConfig, ShoulderGuard
-from .hotkey_setup import HOTKEY_ACTIONS, hotkey_error, register_hotkeys
 from .input_state import InputTracker
 from .presence import (
     PresenceConfig,
@@ -170,7 +174,7 @@ from .presence import (
     effective_away_action,
 )
 from .scheduler import RateContext, RatePolicy
-from .window_memory import WindowMemory, choose_cursor_target
+from .window_memory import WindowMemory
 
 if TYPE_CHECKING:
     from ..gaze.model import GazeModel
@@ -200,8 +204,6 @@ log = logging.getLogger(__name__)
 
 #: How often the focused window is sampled (remembered per monitor).
 WINDOW_POLL_S = 0.5
-#: How often the session lock state is checked.
-LOCK_POLL_S = 2.0
 #: How often other apps' camera use and the pause-for-apps list are checked.
 YIELD_POLL_S = 3.0
 #: How often ``stats_changed`` is emitted.
@@ -211,10 +213,6 @@ STATS_PERIOD_S = 2.0
 SCREEN_DEBOUNCE_MS = 1000
 #: The worker interval is only updated when it changes by more than this fraction.
 RATE_TOLERANCE = 0.05
-#: Moving the mouse back to the previous monitor this soon after an automatic
-#: switch marks that switch as wrong (drift evidence); a switch left alone this
-#: long counts as correct.
-WRONG_SWITCH_S = 2.0
 #: During a blink the last gaze point is held for this long, so a blink does not
 #: restart the dwell toward another monitor.
 BLINK_HOLD_S = 0.5
@@ -245,12 +243,6 @@ FEATURE_MISMATCH_LIMIT = 5
 #: view (turning to the user, looking down at notes) and ends once nobody has
 #: looked over the user's shoulder for this long.
 GUARD_RELOCK_GRACE_S = 300.0
-#: Consecutive refused pointer moves after which switching pauses (backing off
-#: from ``WARP_BACKOFF_S``, doubling up to ``WARP_BACKOFF_MAX_S``) instead of
-#: retrying after every cooldown.
-WARP_REFUSAL_LIMIT = 3
-WARP_BACKOFF_S = 60.0
-WARP_BACKOFF_MAX_S = 1800.0
 #: A deferred "calibration needed" announcement is delivered once the user could
 #: be interrupted for this long and no monitor change is pending: displays that
 #: drop out during sleep come back unchanged and must not prompt.
@@ -271,9 +263,6 @@ BLIND_NOTICE_COOLDOWN_S = 600.0
 #: that still fails the same way after a pause would go unnoticed. With no frame
 #: this long after the camera was switched on, the worker's error is read back.
 CAMERA_ERROR_RECHECK_S = 8.0
-#: Consecutive failed window activations after which a missing Accessibility
-#: permission (macOS) is reported.
-ACTIVATION_FAILURE_LIMIT = 3
 #: How long :meth:`Controller.shutdown` waits for a screen lock still in progress.
 LOCK_JOIN_TIMEOUT_S = 2.0
 #: While the gaze is inside the focused terminal window its panes are asked for
@@ -320,7 +309,7 @@ _NAPPABLE_STATES = frozenset({TrackingState.PAUSED, TrackingState.PRIVACY})
 
 
 # ------------------------------------------------------------------------ controller
-class Controller(QObject):
+class Controller(ControllerHotkeysMixin, ControllerScreensMixin, QObject):
     """Main-thread orchestrator of tracking, switching, presence and privacy features.
 
     Args:
@@ -764,41 +753,9 @@ class Controller(QObject):
         return self._yield_reason
 
     @property
-    def hotkey_manager(self) -> HotkeyManager | None:
-        """The global hotkey manager (``None`` before :meth:`start`)."""
-        return self._hotkeys
-
-    @property
     def platform(self) -> PlatformServices:
         """The OS integration layer this controller was built with."""
         return self._platform
-
-    def suspend_hotkeys(self, suspended: bool) -> None:
-        """Release (``True``) or restore (``False``) the global hotkeys.
-
-        The settings dialog suspends them while it records a new shortcut: the OS
-        delivers a registered combination to us instead of the focused window, so
-        without this the user could not re-record a shortcut that is in use.
-        """
-        suspended = bool(suspended)
-        if suspended == self._hotkeys_suspended:
-            return
-        self._hotkeys_suspended = suspended
-        if self._hotkeys is None or self._closed:
-            return
-        if suspended:
-            try:
-                self._hotkeys.unregister_all()
-            except Exception:
-                log.debug("Releasing hotkeys failed", exc_info=True)
-        else:
-            self._register_hotkeys()
-
-    def monitors(self) -> list[Monitor]:
-        """The current monitor layout."""
-        if not self._monitors and not self._started:
-            return self._read_monitors()
-        return list(self._monitors)
 
     def calibration(self) -> CalibrationData | None:
         """The calibration in use, or the most recent one when none fits the current
@@ -851,44 +808,6 @@ class Controller(QObject):
         return dict(self._last_stats)
 
     # ============================================================ user commands
-    def pause(self) -> None:
-        """Pause tracking; the camera is released."""
-        if not self._paused:
-            self._paused = True
-            log.info("Tracking paused")
-            self._update_state()
-
-    def resume(self) -> None:
-        """Resume after :meth:`pause` (privacy mode, if on, stays on)."""
-        if self._paused:
-            self._paused = False
-            log.info("Tracking resumed")
-            self._update_state()
-
-    def toggle_pause(self) -> None:
-        if self._paused:
-            self.resume()
-        else:
-            self.pause()
-
-    def set_privacy(self, enabled: bool) -> None:
-        """Privacy mode: the camera is fully released (its light goes off).
-
-        The choice is remembered for the next start (``privacy.remember_privacy_mode``).
-        """
-        enabled = bool(enabled)
-        # An explicit choice made during a calibration is what applies afterwards.
-        self._privacy_before_calibration = False
-        if enabled == self._privacy:
-            return
-        self._privacy = enabled
-        self._privacy_restored = False
-        log.info("Privacy mode %s", "on" if enabled else "off")
-        _save_privacy_mode(enabled)
-        self._update_state()
-
-    def toggle_privacy(self) -> None:
-        self.set_privacy(not self._privacy)
 
     def set_preview(self, enabled: bool, owner: object | None = None) -> None:
         """Deliver annotated camera frames through ``preview_frame`` (and sample faster).
@@ -1036,28 +955,6 @@ class Controller(QObject):
         log.info("Settings applied")
         self.settings_changed.emit(new)
 
-    def refresh_monitors(self) -> None:
-        """Re-read the monitor layout (called automatically after screen changes)."""
-        if self._closed:
-            return
-        monitors = self._read_monitors()
-        if not monitors:
-            log.debug("No monitors reported; keeping the previous layout")
-            return
-        if _layout_key(monitors) == _layout_key(self._monitors):
-            self._monitors = monitors  # names or scale factors may have changed
-            return
-        log.info(
-            "Monitor layout changed: %s",
-            ", ".join(f"{m.index}:{m.rect.w}x{m.rect.h}@{m.rect.x},{m.rect.y}" for m in monitors),
-        )
-        self._set_monitors(monitors)
-        self._memory.clear()
-        self._reset_tracking()
-        if self._started:
-            self._validate_calibration(announce=True)
-            self._update_state()
-
     def handle_command(self, command: str) -> str:
         """Execute an IPC command (see :data:`COMMANDS`) and return the reply line.
 
@@ -1143,44 +1040,6 @@ class Controller(QObject):
             "failed_providers": sorted(worker.disabled_providers) if worker is not None else [],
         }
 
-    def _hotkey_status(self) -> dict[str, Any]:
-        """The global hotkeys as the OS took them: ``{"registered": [names],
-        "errors": {name: why it is not registered}}``.
-
-        Only this process knows: ``eye-tracker doctor`` reads it through
-        ``status`` (it cannot register anything itself without taking the
-        combinations away from the running app). Empty while hotkeys are off or
-        unsupported here, where nothing is registered on purpose.
-        """
-        manager = self._hotkeys
-        hk = self._settings.hotkeys
-        if manager is None or not hk.enabled or not manager.supported:
-            return {"registered": [], "errors": {}}
-        configured = [name for name in HOTKEY_ACTIONS if str(getattr(hk, name, "") or "").strip()]
-        if self._hotkeys_suspended:
-            # Released on purpose; they come back when the settings dialog is done.
-            released = "released while a shortcut is being recorded in Settings → Hotkeys"
-            return {"registered": [], "errors": dict.fromkeys(configured, released)}
-        try:
-            registered = sorted(str(name) for name in manager.registered)
-        except Exception:
-            log.debug("Reading the registered hotkeys failed", exc_info=True)
-            registered = []
-        errors: dict[str, str] = {}
-        for name in configured:
-            if name in registered:
-                continue
-            reason = hotkey_error(manager, name)
-            if reason:
-                errors[name] = reason
-        status: dict[str, Any] = {"registered": registered, "errors": errors}
-        note = getattr(manager, "note", None)
-        if isinstance(note, str) and note.strip():
-            # A limitation the running manager found (another program grabbing
-            # the Super key on its own): doctor shows it.
-            status["note"] = note.strip()
-        return status
-
     # ================================================================ housekeeping
     def tick(self) -> None:
         """One housekeeping step (normally driven by the internal timer)."""
@@ -1240,38 +1099,6 @@ class Controller(QObject):
             self._drift.record_wrong_switch()
             log.debug("Automatic switch undone by the user")
             self._check_drift(now)
-
-    def _settle_last_switch(self, now: float) -> None:
-        """A switch the user left alone for WRONG_SWITCH_S was a correct one.
-
-        Recording those as well keeps the drift statistics honest: with adaptive
-        learning off, undone switches would otherwise be the only events.
-        """
-        last = self._last_switch
-        if last is not None and now - last[0] > WRONG_SWITCH_S:
-            self._last_switch = None
-            self._drift.record_switch(True)
-
-    def _record_foreground_window(self, now: float) -> None:
-        if self._state is not TrackingState.TRACKING:
-            return
-        remember = self._settings.switching.focus_window
-        panes = self._panes_wanted()
-        if not (remember or panes):
-            return
-        ref = self._platform_call("foreground_window")
-        if not isinstance(ref, WindowRef) or ref.rect is None or not self._monitors:
-            if panes:
-                self._forget_pane_window()
-            return
-        if remember:
-            cx, cy = ref.rect.center
-            monitor = (
-                monitor_at(self._monitors, cx, cy) or nearest_monitor(self._monitors, cx, cy)[0]
-            )
-            self._memory.record_window(monitor.index, ref)
-        if panes:
-            self._follow_pane_window(ref, now)
 
     # ---------------------------------------------------------- split panes
     def _panes_supported(self) -> bool:
@@ -1919,13 +1746,6 @@ class Controller(QObject):
         self._last_pane_decision = pane
         self._pending = decision.pending or pane.pending
 
-    def _current_monitor(self, cursor: tuple[int, int] | None) -> int | None:
-        """Index of the monitor the pointer is on (``None`` if unknown)."""
-        if not self._cursor_reliable:
-            return self._assumed_monitor
-        monitor = monitor_at(self._monitors, cursor[0], cursor[1]) if cursor else None
-        return monitor.index if monitor is not None else None
-
     def _estimate_gaze(self, obs: Observation, now: float) -> tuple[float, float] | None:
         self._looking_away = False
         model = self._model
@@ -1986,130 +1806,6 @@ class Controller(QObject):
             return
         self._gaze_none_sent = False
         self.gaze_changed.emit(GazePoint(gaze[0], gaze[1], now))
-
-    def _switch_to(
-        self,
-        target: int,
-        gaze: tuple[float, float] | None,
-        cursor: tuple[int, int] | None,
-        current: int | None,
-        now: float,
-    ) -> None:
-        monitor = next((m for m in self._monitors if m.index == target), None)
-        if monitor is None:
-            return
-        sw = self._settings.switching
-        if self._cursor_reliable and current is not None and cursor is not None:
-            self._memory.record_cursor(current, cursor)
-
-        window = self._remembered_window(monitor) if sw.focus_window else None
-        x, y = choose_cursor_target(
-            sw.cursor_target,
-            monitor,
-            self._memory,
-            gaze,
-            window.rect if window is not None else None,
-        )
-        # Warp first, then activate: input injected by activation fallbacks must
-        # not be mistaken for the user typing (see InputTracker).
-        self._input.note_programmatic_move((x, y), now)
-        if not self._move_cursor(x, y, now):
-            # Nothing moved, so this was no switch: no focus change, no count. The
-            # decider armed its cooldown when it fired, so it retries after that.
-            return
-        if sw.focus_window:
-            if window is None:
-                found = self._platform_call("window_at", x, y)
-                window = found if isinstance(found, WindowRef) else None
-            if window is not None:
-                self._activate(monitor, window)
-
-        self._decider.notify_switched(now, target)
-        self._pane_decider.reset()  # another monitor: another pane context
-        self._assumed_monitor = target
-        if self._last_switch is not None:
-            self._drift.record_switch(True)  # the previous switch was kept until now
-        # Without a reliable pointer position an undone switch cannot be seen.
-        self._last_switch = (now, current, target) if self._cursor_reliable else None
-        self._switch_count += 1
-        log.debug("Switched to monitor %d (cursor %d, %d)", target, x, y)
-        self.switched.emit(target)
-
-    def _activate(self, monitor: Monitor, window: WindowRef) -> None:
-        if self._platform_call("activate_window", window, default=False):
-            self._memory.record_window(monitor.index, window)
-            self._activation_failures = 0
-            return
-        log.debug("Could not activate the window on monitor %d", monitor.index)
-        self._activation_failures += 1
-        if self._activation_failures >= ACTIVATION_FAILURE_LIMIT:
-            # Activation also fails for ordinary reasons (Windows' foreground
-            # lock, a window that closed); only a missing permission is reported.
-            self._activation_failures = 0
-            self._check_accessibility()
-
-    def _remembered_window(self, monitor: Monitor) -> WindowRef | None:
-        """The last window used on ``monitor`` if it still exists and is still there."""
-        ref = self._memory.last_window(monitor.index)
-        if ref is None:
-            return None
-        if not self._platform_call("is_window_valid", ref, default=False):
-            self._memory.forget_window(monitor.index)
-            return None
-        rect = self._platform_call("window_rect", ref)
-        if not isinstance(rect, Rect):
-            rect = ref.rect
-        if rect is None:
-            return ref
-        if not monitor.rect.contains(*rect.center):
-            self._memory.forget_window(monitor.index)  # moved to another monitor
-            return None
-        return ref if rect == ref.rect else dataclasses.replace(ref, rect=rect)
-
-    def _move_cursor(self, x: int, y: int, now: float) -> bool:
-        """Warp the pointer; False if the system refused.
-
-        Refusals in a row pause switching (backing off) instead of retrying after
-        every cooldown, and the user is told once.
-        """
-        try:
-            result = self._cursor.set_pos(int(x), int(y))
-        except Exception:
-            log.warning("Moving the cursor failed", exc_info=True)
-            result = False
-        if result is None or bool(result):
-            self._warp_refusals = 0
-            self._warp_suspensions = 0
-            self._switching_suspended_until = -math.inf
-            return True
-        # Windows refuses pointer moves as soon as the secure desktop (lock screen,
-        # UAC prompt, Ctrl+Alt+Del) has the input, up to LOCK_POLL_S before the
-        # regular poll notices. Ask now: a refusal caused by a lock says nothing
-        # about the desktop, so it neither counts towards the backoff nor tells
-        # the user that the cursor cannot be moved.
-        self._next_lock_check = now + LOCK_POLL_S
-        self._check_session_lock(now)
-        if self._session_locked:
-            log.info("The system refused to move the pointer: the session is locked")
-            return False
-        self._warp_refusals += 1
-        log.info("The system refused to move the pointer (%d in a row)", self._warp_refusals)
-        if self._warp_refusals >= WARP_REFUSAL_LIMIT:
-            self._warp_suspensions += 1
-            delay = min(
-                WARP_BACKOFF_MAX_S, WARP_BACKOFF_S * 2 ** min(self._warp_suspensions - 1, 16)
-            )
-            self._switching_suspended_until = now + delay
-            log.warning("Pointer moves keep failing; switching paused for %.0f s", delay)
-            if not self._cursor_warning_shown:
-                self._cursor_warning_shown = True
-                self._notify(
-                    "Cannot move the cursor",
-                    "The system keeps refusing to move the mouse pointer, so switching "
-                    "monitors is paused for now. On Wayland, install ydotool (see the "
-                    "documentation).",
-                )
-        return False
 
     # ------------------------------------------------------------------ learning
     def _learn(self, obs: Observation, now: float) -> None:
@@ -2187,10 +1883,6 @@ class Controller(QObject):
         if not (math.isfinite(px) and math.isfinite(py)):
             return None
         return (px, py)
-
-    def _monitor_index_at(self, x: float, y: float) -> int | None:
-        monitor = monitor_at(self._monitors, x, y)
-        return monitor.index if monitor is not None else None
 
     # ================================================================== presence
     def _update_presence(self, now: float) -> None:
@@ -2749,14 +2441,6 @@ class Controller(QObject):
         self._last_announce = self._clock()
         self.calibration_required.emit(reason)
 
-    def _may_interrupt(self) -> bool:
-        return may_interrupt(
-            calibration_useful=self._calibration_useful(),
-            calibrating=self._calibrating,
-            displays_off_only=self._displays_off_only,
-            state=self._state,
-        )
-
     # =================================================================== backend
     def _make_backend_factory(self, settings: Settings) -> BackendFactory:
         """A backend factory for the worker that records what it built.
@@ -2843,231 +2527,9 @@ class Controller(QObject):
         return self._worker_stats
 
     # ============================================================ permissions
-    def _check_accessibility(self) -> None:
-        """Tell the user (once) when focus cannot follow the gaze for lack of the
-        macOS Accessibility permission, or because it belongs to an older build."""
-        sw = self._settings.switching
-        if (
-            self._accessibility_notice_shown
-            or not (sw.enabled and sw.focus_window)
-            or len(self._monitors) < 2
-        ):
-            return
-        status = self._platform_call("accessibility_status")
-        if status not in ("missing", "stale"):
-            return
-        self._accessibility_notice_shown = True
-        if status == "stale":
-            message = (
-                "Keyboard focus cannot follow your gaze: the Accessibility permission "
-                "belongs to a previous version of Eye Tracker. In System Settings › Privacy "
-                "& Security › Accessibility, remove Eye Tracker with “−” and add it again."
-            )
-        else:
-            message = (
-                "Keyboard focus cannot follow your gaze until Eye Tracker may control "
-                "your computer: System Settings › Privacy & Security › Accessibility."
-            )
-        self._notify("Accessibility access needed", message, force=True)
-        self.permission_needed.emit("accessibility")
 
     # =================================================================== hotkeys
-    def _setup_hotkeys(self) -> None:
-        if self._hotkeys is None:
-            factory = self._hotkey_factory
-            if factory is None:
-                from ..platform.hotkeys import create_hotkey_manager
-
-                factory = create_hotkey_manager
-            try:
-                self._hotkeys = factory()
-            except Exception:
-                log.warning("Global hotkeys unavailable", exc_info=True)
-                return
-        self._register_hotkeys()
-
-    def _register_hotkeys(self) -> None:
-        manager = self._hotkeys
-        if manager is None:
-            return
-        self._announced_hotkey_failures = register_hotkeys(
-            manager,
-            self._settings,
-            self._announced_hotkey_failures,
-            suspended=self._hotkeys_suspended,
-            on_hotkey=self._on_hotkey,
-            notify=self._notify,
-        )
-
-    def _on_hotkey(self, name: str) -> None:  # hotkey thread (or the main thread on macOS)
-        if self._closed:
-            return
-        if self._on_main_thread():
-            self._handle_hotkey(name)
-        else:
-            self._hotkey_pressed.emit(name)
-
-    def _handle_hotkey(self, name: str) -> None:
-        if self._closed:
-            return
-        if self._hotkeys_suspended:
-            log.debug("Hotkey %s ignored while hotkeys are suspended", name)
-            return
-        log.info("Hotkey: %s", name)
-        before = (self._paused, self._privacy)
-        if name == "toggle_tracking":
-            self.toggle_pause()
-            self._confirm_mode_change(before)
-        elif name == "toggle_privacy":
-            self.toggle_privacy()
-            self._confirm_mode_change(before)
-        elif name == "recalibrate":
-            self.calibration_required.emit("hotkey")
-
-    def _confirm_mode_change(self, before: tuple[bool, bool]) -> None:
-        """Confirm a pause or privacy change made by a hotkey or ``ctl`` command.
-
-        Both are toggles, and the tray icon often sits in a hidden overflow area,
-        so without a word the user cannot tell which way a press went, and
-        pausing also stops walk-away detection. ``before`` is ``(paused,
-        privacy)`` before the change. The tray menu needs no confirmation: its
-        check marks show the result.
-        """
-        paused, privacy = self._paused, self._privacy
-        was_paused, was_private = before
-        stopped = (
-            "Switching monitors and walk-away detection pause"
-            if self._settings.presence.enabled
-            else "Switching monitors pauses"
-        )
-        if self._state.camera_active:
-            back_on = "The camera is on again."
-        else:  # e.g. the session is locked, or another app has the camera
-            back_on = f"The camera stays off for now ({self._state.label})."
-        if privacy != was_private:
-            if privacy:
-                title = "Privacy mode on"
-                message = (
-                    f"The camera is off. {stopped} until you turn privacy mode "
-                    f"off{self._hotkey_hint('toggle_privacy')}."
-                )
-            else:
-                title = "Privacy mode off"
-                message = "Tracking is still paused: the camera stays off." if paused else back_on
-        elif paused != was_paused:
-            if paused:
-                title = "Tracking paused"
-                message = (
-                    f"The camera is released. {stopped} until you "
-                    f"resume{self._hotkey_hint('toggle_tracking')}."
-                )
-            else:
-                title = "Tracking resumed"
-                message = "Privacy mode is still on: the camera stays off." if privacy else back_on
-        else:
-            return
-        self._notify(title, message)
-
-    def _hotkey_hint(self, name: str) -> str:
-        """``" (Ctrl+Alt+Win+T)"`` for a registered hotkey ``name``, else ``""``."""
-        from ..platform.hotkeys import Hotkey, format_hotkey
-
-        manager = self._hotkeys
-        try:
-            hotkey = manager.registered.get(name) if manager is not None else None
-        except Exception:
-            log.debug("Reading the registered hotkeys failed", exc_info=True)
-            return ""
-        return f" ({format_hotkey(hotkey)})" if isinstance(hotkey, Hotkey) else ""
 
     # =================================================================== screens
-    def _connect_screens(self) -> None:
-        app = QGuiApplication.instance()
-        if not isinstance(app, QGuiApplication) or self._screens_connected:
-            return
-        app.screenAdded.connect(self._on_screen_added)
-        app.screenRemoved.connect(self._schedule_monitor_refresh)
-        app.primaryScreenChanged.connect(self._schedule_monitor_refresh)
-        for screen in QGuiApplication.screens():
-            screen.geometryChanged.connect(self._schedule_monitor_refresh)
-        self._screens_connected = True
-
-    def _disconnect_screens(self) -> None:
-        app = QGuiApplication.instance()
-        if not self._screens_connected or not isinstance(app, QGuiApplication):
-            return
-        self._screens_connected = False
-        with contextlib.suppress(RuntimeError, TypeError):
-            app.screenAdded.disconnect(self._on_screen_added)
-            app.screenRemoved.disconnect(self._schedule_monitor_refresh)
-            app.primaryScreenChanged.disconnect(self._schedule_monitor_refresh)
-
-    def _on_screen_added(self, screen: Any) -> None:
-        with contextlib.suppress(RuntimeError, AttributeError):
-            screen.geometryChanged.connect(self._schedule_monitor_refresh)
-        self._schedule_monitor_refresh()
-
-    def _schedule_monitor_refresh(self, *_args: object) -> None:
-        if not self._closed:
-            self._screen_timer.start()
-
-    def _read_monitors(self) -> list[Monitor]:
-        try:
-            return list(self._monitors_provider())
-        except Exception:
-            log.warning("Reading the monitor layout failed", exc_info=True)
-            return []
-
-    def _set_monitors(self, monitors: list[Monitor]) -> None:
-        before = self._monitors
-        assumed = next((m for m in before if m.index == self._assumed_monitor), None)
-        self._monitors = list(monitors)
-        self._decider.set_monitors(self._monitors)
-        self._pane_decider.reset()
-        self._pane_sigma_cache = None
-        sides = [min(m.rect.w, m.rect.h) for m in self._monitors if m.rect.w > 0 and m.rect.h > 0]
-        self._min_side = float(min(sides)) if sides else 1000.0
-        if self._cursor_reliable:
-            return
-        if assumed is not None:
-            # Monitors are numbered in the order Qt lists the screens, so removing
-            # a screen (or changing the primary) renumbers the others: follow the
-            # physical monitor the pointer was moved to, not its old number.
-            match = _same_monitor(assumed, before, self._monitors)
-            self._assumed_monitor = match.index if match is not None else None
-        if not any(m.index == self._assumed_monitor for m in self._monitors):
-            # A stale position is still the best guess until the first switch.
-            cursor = self._cursor_pos()
-            monitor = monitor_at(self._monitors, *cursor) if cursor else None
-            self._assumed_monitor = monitor.index if monitor is not None else None
 
     # ==================================================================== helpers
-    def _cursor_pos(self) -> tuple[int, int] | None:
-        try:
-            x, y = self._cursor.pos()
-        except Exception:
-            log.debug("Reading the cursor position failed", exc_info=True)
-            return None
-        return (int(x), int(y))
-
-    def _platform_call(self, name: str, *args: Any, default: Any = None) -> Any:
-        """Call a platform method; the contract says they never raise, but be safe.
-
-        A method the object does not have (a partial test double) returns
-        ``default``.
-        """
-        method = getattr(self._platform, name, None)
-        if method is None:
-            return default
-        try:
-            return method(*args)
-        except Exception:
-            log.debug("Platform call %s failed", name, exc_info=True)
-            return default
-
-    def _notify(self, title: str, message: str, *, force: bool = False) -> None:
-        """Emit ``notify``. Informational messages respect the notifications setting;
-        ``force`` is for actions the user chose to be notified about."""
-        log.info("Notification: %s — %s", title, message)
-        if force or self._settings.general.notifications:
-            self.notify.emit(title, message)

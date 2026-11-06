@@ -32,11 +32,15 @@ FOUNDATION = {
 }
 CONTROLLER = {
     "eye_tracker.engine.controller",
+    "eye_tracker.engine.controller_hotkeys",
+    "eye_tracker.engine.controller_screens",
     "eye_tracker.engine.controller_support",
 }
 COMPOSITION = {
     "eye_tracker.app",
     "eye_tracker.app_startup",
+    "eye_tracker.app_updates",
+    "eye_tracker.app_windows",
     "eye_tracker.ipc",
     "eye_tracker.diagnostics",
 }
@@ -81,7 +85,11 @@ PURE_MODULES = (
     "eye_tracker.engine.",
     "eye_tracker.reading.",
 )
-PURE_EXCEPTIONS = {"eye_tracker.engine.controller", "eye_tracker.engine.controller_support"}
+PURE_EXCEPTIONS = {
+    "eye_tracker.engine.controller",
+    "eye_tracker.engine.controller_screens",
+    "eye_tracker.engine.controller_support",
+}
 
 QT_CV_ROOTS = {"PySide6", "cv2"}
 
