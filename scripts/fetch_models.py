@@ -334,10 +334,15 @@ def _describe(model: Model) -> str:
 
 # --------------------------------------------------------------------------------- main
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Download and verify Eye Tracker's face models.")
+    parser = argparse.ArgumentParser(
+        description="Verify (default) or download Eye Tracker's face models."
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
-        "--check", action="store_true", help="verify only; exit 1 if anything is wrong"
+        "--check", action="store_true", help="verify only (the default); exit 1 on problems"
+    )
+    mode.add_argument(
+        "--fetch", action="store_true", help="download missing or invalid models (network)"
     )
     mode.add_argument("--force", action="store_true", help="download even if the files are valid")
     parser.add_argument(
@@ -348,6 +353,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     dest: Path = args.dest
+    fetch = bool(args.fetch or args.force)
+    verify_only = not fetch
 
     failures = 0
     for model in MODELS:
@@ -356,8 +363,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             size = _human_size(_installed_size(model, dest))
             print(f"  ok       {_describe(model)} ({size}, sha256 verified)")
             continue
-        if args.check:
-            print(f"  {status:<8} {_describe(model)}  (run scripts/fetch_models.py to fix)")
+        if verify_only:
+            print(f"  {status:<8} {_describe(model)}  (run scripts/fetch_models.py --fetch to fix)")
             failures += 1
             continue
         print(f"  fetch    {model.filename} [{model.license}] from {model.url}")
@@ -374,14 +381,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if failures:
         print(f"{failures} model(s) missing or invalid in {dest}", file=sys.stderr)
     if licence_problems:
-        # Committed files, never downloaded: only --check (CI, release builds)
-        # fails on them; fetching models into another folder merely warns.
-        prefix = "" if args.check else "warning: "
+        # Committed files, never downloaded: verify-only runs (CI, release
+        # builds, the default) fail on them; fetching into another folder warns.
+        prefix = "" if verify_only else "warning: "
         print(
             f"{prefix}{licence_problems} licence text(s) missing or altered in {dest}",
             file=sys.stderr,
         )
-    return 1 if failures or (args.check and licence_problems) else 0
+    return 1 if failures or (verify_only and licence_problems) else 0
 
 
 if __name__ == "__main__":

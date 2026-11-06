@@ -141,5 +141,25 @@ def test_download_mode_only_warns_about_licence_texts(
 
     monkeypatch.setattr(fetch_models, "MODELS", (model,))
     monkeypatch.setattr(fetch_models.urllib.request, "urlopen", no_network)
-    assert fetch_models.main(["--dest", str(tmp_path)]) == 0
+    assert fetch_models.main(["--fetch", "--dest", str(tmp_path)]) == 0
     assert "warning: 2 licence text(s) missing or altered" in capsys.readouterr().err
+
+
+def test_default_mode_is_verify_only_and_never_touches_the_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = fetch_models.Model(
+        filename="missing.bin",
+        url="https://example.invalid/missing.bin",
+        sha256="0" * 64,
+        license="MIT",
+        homepage="https://example.invalid",
+        description="test model",
+    )
+
+    def no_network(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("the default mode must not download")
+
+    monkeypatch.setattr(fetch_models, "MODELS", (model,))
+    monkeypatch.setattr(fetch_models.urllib.request, "urlopen", no_network)
+    assert fetch_models.main(["--dest", str(tmp_path)]) == 1

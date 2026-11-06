@@ -218,7 +218,7 @@ def test_download_refuses_oversized_responses(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_main_downloads_only_what_is_missing(
+def test_main_downloads_only_what_is_missing_with_fetch(
     tmp_path: Path, fake_urlopen: FakeUrlopen, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     outcomes, calls = fake_urlopen
@@ -226,7 +226,7 @@ def test_main_downloads_only_what_is_missing(
     monkeypatch.setattr(fetch_models, "MODELS", (present, missing))
     (tmp_path / "a.bin").write_bytes(b"a")
     outcomes.append(b"b")
-    assert fetch_models.main(["--dest", str(tmp_path)]) == 0
+    assert fetch_models.main(["--fetch", "--dest", str(tmp_path)]) == 0
     assert calls == [missing.url]
     assert (tmp_path / "b.bin").read_bytes() == b"b"
 
@@ -234,6 +234,12 @@ def test_main_downloads_only_what_is_missing(
     outcomes += [b"a", b"b"]
     assert fetch_models.main(["--force", "--dest", str(tmp_path)]) == 0
     assert len(calls) == 3
+
+    # The default is verify-only: a missing model fails without a network call.
+    (tmp_path / "b.bin").unlink()
+    calls.clear()
+    assert fetch_models.main(["--dest", str(tmp_path)]) == 1
+    assert calls == []
 
 
 # ============================================================================== make_icons
