@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 5 个步骤、B2 4 个步骤）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 5 个步骤、B2 5 个步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -491,7 +491,13 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
   `windows_platform.py`（536 行：窗口选择、焦点获取、显示器电源、权限策略）。
   测试的私有 helper 与 patch seam 改指真实模块（os/sys 直接打全局模块），断言不变。CI run
   [42161480869](https://github.com/likangjie110/eye-tracker/actions/runs/42161480869) 全绿。
-- 剩余 B2：`platform/linux.py`（2,528）、`macos.py`（1,230）的大文件与错误路径测试。
+- **步骤 5（Linux 拆分）** `5c6ccd5`：`platform/linux.py` 2,528 → 1,100 行；拆出
+  `linux_common.py`（169）/`linux_desktop.py`（361）/`linux_x11.py`（451）/
+  `linux_dbus.py`（119）/`linux_camera.py`（523）。`LinuxPlatform` 仍在 facade，平台用到的
+  helper 保持可从 facade patch；测试私有引用按定义模块路由，断言不变。CI run
+  [42162202129](https://github.com/likangjie110/eye-tracker/actions/runs/42162202129) 全绿。
+- 剩余 B2：`platform/macos.py`（1,230）拆分；`LinuxPlatform` 类（约 950 行）可按 X11/Wayland
+  策略再拆（TD-CPLX-014）。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
@@ -582,4 +588,5 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 4 · B2 | 步骤 2：Windows（510）/macOS（722）后端拆出，facade 2740→151 行；B2 完成 | `0ba5c64` | 行为不变（工厂/导入入口不变，断言未改）；CI run `42158721245` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 3：autostart 拆为 common + 三个 OS 模块（884→425 行 façade）；OS 调用改为模块限定，测试 seam 更新 | `b8102ac` | 行为不变（公共 API 与命令不变，断言未改）；autostart.py 退出 >600 行清单；CI run `42159513393` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 4：windows 拆为 `windows_api`（839）+ `windows_platform`（536）+ 11 行 facade；测试 seam 更新 | `95e208d` | 行为不变（断言未改）；CI run `42161480869` 绿 |
+| 2026-11-06 | 阶段 4 · B2 | 步骤 5：linux 拆为 common/desktop/x11/dbus/camera，facade 2528→1100 行；测试 seam 按定义模块路由 | `5c6ccd5` | 行为不变（断言未改）；CI run `42162202129` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
