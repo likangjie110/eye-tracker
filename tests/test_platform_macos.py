@@ -10,15 +10,17 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from eye_tracker.platform import macos
+from eye_tracker.platform import macos, macos_api, macos_platform
 from eye_tracker.platform.base import PlatformServices
 from eye_tracker.types import AppIdentity, Rect, WindowRef
 
@@ -70,17 +72,20 @@ class Recorder:
 @pytest.fixture(autouse=True)
 def recorder(monkeypatch: pytest.MonkeyPatch) -> Recorder:
     rec = Recorder()
-    monkeypatch.setattr(macos, "_tool", rec.tool)
-    monkeypatch.setattr(macos.subprocess, "run", rec.run)
-    monkeypatch.setattr(macos.subprocess, "Popen", rec.popen)
+    monkeypatch.setattr(macos_platform, "_tool", rec.tool)
+    monkeypatch.setattr(subprocess, "run", rec.run)
+    monkeypatch.setattr(subprocess, "Popen", rec.popen)
 
     def no_library(path: str) -> Any:
         raise OSError(f"{path} is not loadable in tests")
 
-    monkeypatch.setattr(macos, "_load_library", no_library)
-    monkeypatch.setattr(macos, "_IS_MACOS", False)
-    # Behaviour that depends on the macOS release must not depend on the test host.
-    monkeypatch.setattr(macos, "_macos_major_version", lambda: 0)
+    # The helpers in macos_api and the policy in macos_platform each hold their own binding.
+    for module in (macos_api, macos_platform):
+        monkeypatch.setattr(module, "_load_library", no_library)
+        monkeypatch.setattr(module, "_IS_MACOS", False)
+        # Behaviour that depends on the macOS release must not depend on the test host.
+        monkeypatch.setattr(module, "_macos_major_version", lambda: 0)
+        monkeypatch.setattr(module, "_tool", rec.tool)
     return rec
 
 
@@ -357,7 +362,7 @@ def test_real_import_failure_is_cached(monkeypatch: pytest.MonkeyPatch, clock: C
         attempts.append(name)
         raise ImportError(name)
 
-    monkeypatch.setattr(macos, "importlib", SimpleNamespace(import_module=failing_import))
+    monkeypatch.setattr(macos_platform, "importlib", SimpleNamespace(import_module=failing_import))
     platform = macos.MacPlatform(clock=clock)
     assert platform.seconds_since_input() is None
     assert platform.seconds_since_input() is None
@@ -389,7 +394,7 @@ class FakeLockFunc:
 
 @pytest.fixture
 def on_macos(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(macos, "_IS_MACOS", True)
+    monkeypatch.setattr(macos_platform, "_IS_MACOS", True)
 
 
 def _login_framework(monkeypatch: pytest.MonkeyPatch, func: FakeLockFunc) -> list[str]:
@@ -399,7 +404,8 @@ def _login_framework(monkeypatch: pytest.MonkeyPatch, func: FakeLockFunc) -> lis
         loaded.append(path)
         return SimpleNamespace(SACLockScreenImmediate=func)
 
-    monkeypatch.setattr(macos, "_load_library", load)
+    monkeypatch.setattr(macos_api, "_load_library", load)
+    monkeypatch.setattr(macos_platform, "_load_library", load)
     return loaded
 
 
@@ -411,7 +417,7 @@ def test_lock_uses_login_framework(
     loaded = _login_framework(monkeypatch, func)
     recorder.tools = {"pmset": "/usr/bin/pmset"}
     assert plat.lock_screen() is True
-    assert loaded == [macos.LOGIN_FRAMEWORK]
+    assert loaded == [macos_platform.LOGIN_FRAMEWORK]
     assert func.calls == 1
     assert func.argtypes == []
     assert recorder.runs == []
@@ -499,44 +505,44 @@ def test_move_cursor_warps_and_reassociates(plat: macos.MacPlatform, quartz: Fak
 
 # ------------------------------------------------------------------ pure helpers
 def test_err_value_and_handle_splitting() -> None:
-    assert macos._err_value((0, "x")) == (0, "x")
-    assert macos._err_value((-25202, None)) == (-25202, None)
-    assert macos._err_value((None, "x")) == (0, "x")
-    assert macos._err_value("bare") == (0, "bare")
-    assert macos._split_handle((PID, "win")) == (PID, "win")
-    assert macos._split_handle((PID, None)) == (PID, None)
-    assert macos._split_handle((0, "win")) == (None, None)
-    assert macos._split_handle((True, "win")) == (None, None)
-    assert macos._split_handle(12345) == (None, None)
+    assert macos_platform._err_value((0, "x")) == (0, "x")
+    assert macos_platform._err_value((-25202, None)) == (-25202, None)
+    assert macos_platform._err_value((None, "x")) == (0, "x")
+    assert macos_platform._err_value("bare") == (0, "bare")
+    assert macos_platform._split_handle((PID, "win")) == (PID, "win")
+    assert macos_platform._split_handle((PID, None)) == (PID, None)
+    assert macos_platform._split_handle((0, "win")) == (None, None)
+    assert macos_platform._split_handle((True, "win")) == (None, None)
+    assert macos_platform._split_handle(12345) == (None, None)
 
 
 def test_ax_value_repr_parsing() -> None:
     point = "<AXValue 0x6000> {value = x:24.000000 y:-38.500000 type = kAXValueCGPointType}"
     size = "<AXValue 0x6001> {value = w:1200.000000 h:800.000000 type = kAXValueCGSizeType}"
-    assert macos._pair_from_repr(point, size=False) == (24.0, -38.5)
-    assert macos._pair_from_repr(size, size=True) == (1200.0, 800.0)
-    assert macos._pair_from_repr(point, size=True) is None
-    assert macos._pair_from_repr("garbage", size=False) is None
+    assert macos_api._pair_from_repr(point, size=False) == (24.0, -38.5)
+    assert macos_api._pair_from_repr(size, size=True) == (1200.0, 800.0)
+    assert macos_api._pair_from_repr(point, size=True) is None
+    assert macos_api._pair_from_repr("garbage", size=False) is None
 
 
 def test_rect_from_pairs() -> None:
-    assert macos._rect_from((10.4, 20.6), (800.0, 600.0)) == Rect(10, 21, 800, 600)
-    assert macos._rect_from(None, (1.0, 1.0)) is None
-    assert macos._rect_from((0.0, 0.0), (0.0, 10.0)) is None
-    assert macos._rect_from((math.nan, 0.0), (10.0, 10.0)) is None
+    assert macos_api._rect_from((10.4, 20.6), (800.0, 600.0)) == Rect(10, 21, 800, 600)
+    assert macos_api._rect_from(None, (1.0, 1.0)) is None
+    assert macos_api._rect_from((0.0, 0.0), (0.0, 10.0)) is None
+    assert macos_api._rect_from((math.nan, 0.0), (10.0, 10.0)) is None
 
 
 def test_ax_rect_unpacks_values(ax: FakeAX) -> None:
     ax.window("win", (-1440, 25, 1200, 800))
-    assert macos._ax_rect(ax, "win") == Rect(-1440, 25, 1200, 800)
-    assert macos._ax_rect(ax, "missing") is None
-    assert macos._ax_rect(None, "win") is None
+    assert macos_platform._ax_rect(ax, "win") == Rect(-1440, 25, 1200, 800)
+    assert macos_platform._ax_rect(ax, "missing") is None
+    assert macos_platform._ax_rect(None, "win") is None
 
 
 def test_ax_rect_falls_back_to_description(ax: FakeAX) -> None:
     ax.window("win", (10, 20, 300, 200))
     ax.unpack = False  # AXValueGetValue cannot unpack in this pyobjc build
-    assert macos._ax_rect(ax, "win") == Rect(10, 20, 300, 200)
+    assert macos_platform._ax_rect(ax, "win") == Rect(10, 20, 300, 200)
 
 
 def test_ax_window_of_walks_up_the_hierarchy(ax: FakeAX) -> None:
@@ -550,16 +556,16 @@ def test_ax_window_of_walks_up_the_hierarchy(ax: FakeAX) -> None:
     ax.attrs[("menu", "AXRole")] = "AXMenuItem"
     ax.attrs[("menu", "AXParent")] = "app"
     ax.attrs[("app", "AXRole")] = "AXApplication"
-    assert macos._ax_window_of(ax, "win") == "win"
-    assert macos._ax_window_of(ax, "button") == "win"
-    assert macos._ax_window_of(ax, "cell") == "win"
-    assert macos._ax_window_of(ax, "menu") is None
+    assert macos_platform._ax_window_of(ax, "win") == "win"
+    assert macos_platform._ax_window_of(ax, "button") == "win"
+    assert macos_platform._ax_window_of(ax, "cell") == "win"
+    assert macos_platform._ax_window_of(ax, "menu") is None
 
 
 def test_ax_window_of_is_bounded(ax: FakeAX) -> None:
     ax.attrs[("loop", "AXRole")] = "AXGroup"
     ax.attrs[("loop", "AXParent")] = "loop"  # a broken, cyclic hierarchy
-    assert macos._ax_window_of(ax, "loop") is None
+    assert macos_platform._ax_window_of(ax, "loop") is None
 
 
 def test_cg_window_selection() -> None:
@@ -571,14 +577,17 @@ def test_cg_window_selection() -> None:
         cg_window(OTHER_PID, 0, 0, 1000, 1000),
         {"kCGWindowOwnerPID": "junk", "kCGWindowLayer": 0},
     ]
-    assert macos._cg_window_at(windows, 150, 150, own_pid=999) == (PID, Rect(50, 50, 800, 600))
-    assert macos._cg_window_at(windows, 900, 900, own_pid=999) == (
+    assert macos_platform._cg_window_at(windows, 150, 150, own_pid=999) == (
+        PID,
+        Rect(50, 50, 800, 600),
+    )
+    assert macos_platform._cg_window_at(windows, 900, 900, own_pid=999) == (
         OTHER_PID,
         Rect(0, 0, 1000, 1000),
     )
-    assert macos._cg_window_at(windows, 5000, 5000, own_pid=999) is None
-    assert macos._cg_front_rect(windows, OTHER_PID, own_pid=999) == Rect(0, 0, 1000, 1000)
-    assert macos._cg_front_rect(windows, 12, own_pid=999) is None
+    assert macos_platform._cg_window_at(windows, 5000, 5000, own_pid=999) is None
+    assert macos_platform._cg_front_rect(windows, OTHER_PID, own_pid=999) == Rect(0, 0, 1000, 1000)
+    assert macos_platform._cg_front_rect(windows, 12, own_pid=999) is None
 
 
 # ------------------------------------------------------------------ windows
@@ -613,7 +622,7 @@ def test_foreground_window_without_accessibility(
 def test_foreground_window_skips_our_own_app(
     monkeypatch: pytest.MonkeyPatch, plat: macos.MacPlatform, appkit: FakeAppKit
 ) -> None:
-    monkeypatch.setattr(macos.os, "getpid", lambda: PID)
+    monkeypatch.setattr(os, "getpid", lambda: PID)
     assert plat.foreground_window() is None
 
 
@@ -667,7 +676,7 @@ def test_window_at_hit_test_fallback(
     assert ref is not None
     assert ref.handle == (PID, "win")
     assert ref.rect == Rect(0, 0, 640, 480)
-    monkeypatch.setattr(macos.os, "getpid", lambda: PID)
+    monkeypatch.setattr(os, "getpid", lambda: PID)
     assert plat.window_at(10, 10) is None
 
 
@@ -695,7 +704,7 @@ def test_activate_window_refuses_minimised(
 def test_activate_app_without_accessibility(
     plat: macos.MacPlatform, ax: FakeAX, appkit: FakeAppKit, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(macos, "_macos_major_version", lambda: 13)
+    monkeypatch.setattr(macos_platform, "_macos_major_version", lambda: 13)
     ax.trusted = False
     assert plat.activate_window(WindowRef(handle=(PID, None))) is True
     assert appkit.apps[PID].activations == [2]
@@ -706,7 +715,7 @@ def test_activate_app_without_accessibility(
     assert plat.activate_window(WindowRef(handle="bogus")) is False
     # macOS 14+ ignores activation requests from an inactive (menu-bar) app while
     # still reporting success: asked anyway, but reported as failed.
-    monkeypatch.setattr(macos, "_macos_major_version", lambda: 14)
+    monkeypatch.setattr(macos_platform, "_macos_major_version", lambda: 14)
     appkit.apps[PID].activate_result = True
     assert plat.activate_window(WindowRef(handle=(PID, None))) is False
     assert appkit.apps[PID].activations == [2, 2, 2]
@@ -782,8 +791,8 @@ def test_other_window_of_the_same_app_does_not_count(
 
 
 def test_frames_match_tolerance() -> None:
-    assert macos._frames_match(Rect(0, 0, 100, 100), Rect(2, -2, 98, 102))
-    assert not macos._frames_match(Rect(0, 0, 100, 100), Rect(3, 0, 100, 100))
+    assert macos_platform._frames_match(Rect(0, 0, 100, 100), Rect(2, -2, 98, 102))
+    assert not macos_platform._frames_match(Rect(0, 0, 100, 100), Rect(3, 0, 100, 100))
 
 
 # ------------------------------------------------------------------ windows: hung apps
@@ -805,14 +814,14 @@ def test_hung_frontmost_app_is_left_alone_for_a_while(
     assert len(ax.queries) == asked  # no further AX request to the hung app
     ax.hung.clear()
     ax.attrs[(f"app:{PID}", "AXFocusedWindow")] = ax.window("win", (1920, 0, 1280, 720))
-    clock.now += macos._AX_UNRESPONSIVE_S
+    clock.now += macos_platform._AX_UNRESPONSIVE_S
     assert plat.foreground_window().handle == (PID, "win")  # type: ignore[union-attr]
 
 
 def test_ax_rect_stops_after_a_failed_position(ax: FakeAX) -> None:
     ax.window("win", (0, 0, 10, 10))
     ax.hung.add("win")
-    assert macos._ax_rect_checked(ax, "win") == (AX_ERROR_CANNOT_COMPLETE, None)
+    assert macos_platform._ax_rect_checked(ax, "win") == (AX_ERROR_CANNOT_COMPLETE, None)
     assert ax.queries == [("win", "AXPosition")]  # AXSize would time out again
 
 
@@ -904,7 +913,10 @@ def test_camera_permission_via_objc_runtime(plat: macos.MacPlatform) -> None:
     )
     assert plat.permissions()["camera"] is True
     assert bundles == [
-        ("AVFoundation", {"bundle_path": macos.AVFOUNDATION_FRAMEWORK, "scan_classes": False})
+        (
+            "AVFoundation",
+            {"bundle_path": macos_platform.AVFOUNDATION_FRAMEWORK, "scan_classes": False},
+        )
     ]
 
 
@@ -915,8 +927,8 @@ def test_open_permission_settings(plat: macos.MacPlatform, recorder: Recorder) -
     assert plat.open_permission_settings("camera") is True
     assert plat.open_permission_settings("bluetooth") is False
     assert recorder.runs == [
-        ["/usr/bin/open", macos._PERMISSION_URLS["accessibility"]],
-        ["/usr/bin/open", macos._PERMISSION_URLS["camera"]],
+        ["/usr/bin/open", macos_platform._PERMISSION_URLS["accessibility"]],
+        ["/usr/bin/open", macos_platform._PERMISSION_URLS["camera"]],
     ]
     assert recorder.runs[0][1].endswith("Privacy_Accessibility")
 
@@ -958,7 +970,7 @@ def test_accessory_app_opts_out_of_app_nap(
 ) -> None:
     assert plat.set_accessory_app() is True
     # User initiated (no App Nap, no timer coalescing) but idle sleep still allowed.
-    assert process_info.begun == [(0x00EFFFFF, macos._ACTIVITY_REASON)]
+    assert process_info.begun == [(0x00EFFFFF, macos_platform._ACTIVITY_REASON)]
     assert plat._activity == "token1"  # the token must stay referenced
 
 
@@ -1012,7 +1024,7 @@ def test_accessibility_status_unknown_without_the_api(plat: macos.MacPlatform) -
 
 
 def _packaged(monkeypatch: pytest.MonkeyPatch, build: str) -> None:
-    monkeypatch.setattr(macos, "_build_fingerprint", lambda: build)
+    monkeypatch.setattr(macos_platform, "_build_fingerprint", lambda: build)
 
 
 def test_accessibility_granted_to_an_earlier_build_is_stale(
@@ -1066,8 +1078,8 @@ def _app_bundle(root: Path, *, plist: bytes | None = None) -> tuple[Path, Path]:
 
 
 def _run_as(monkeypatch: pytest.MonkeyPatch, executable: Path) -> None:
-    monkeypatch.setattr(macos.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(macos.sys, "executable", str(executable))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(executable))
 
 
 def test_build_fingerprint_is_the_apps_in_both_executables(
@@ -1075,13 +1087,13 @@ def test_build_fingerprint_is_the_apps_in_both_executables(
 ) -> None:
     app, cli = _app_bundle(tmp_path)
     _run_as(monkeypatch, app)
-    from_app = macos._build_fingerprint()
+    from_app = macos_platform._build_fingerprint()
     assert from_app is not None
     assert from_app.endswith(":300:" + str(app.stat().st_mtime_ns))
-    assert macos._runs_helper_executable() is False
+    assert macos_platform._runs_helper_executable() is False
     _run_as(monkeypatch, cli)
-    assert macos._build_fingerprint() == from_app
-    assert macos._runs_helper_executable() is True
+    assert macos_platform._build_fingerprint() == from_app
+    assert macos_platform._runs_helper_executable() is True
 
 
 @pytest.mark.parametrize(
@@ -1093,10 +1105,10 @@ def test_build_fingerprint_without_a_usable_info_plist(
 ) -> None:
     _app, cli = _app_bundle(tmp_path, plist=plist)
     _run_as(monkeypatch, cli)
-    fingerprint = macos._build_fingerprint()
+    fingerprint = macos_platform._build_fingerprint()
     assert fingerprint is not None
     assert ":200:" in fingerprint  # its own file, as before
-    assert macos._runs_helper_executable() is True  # still known by its name
+    assert macos_platform._runs_helper_executable() is True  # still known by its name
 
 
 def test_cli_does_not_judge_or_record_the_apps_accessibility_grant(
@@ -1139,7 +1151,7 @@ def test_activation_without_accessibility_fails_on_sonoma(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # macOS 14+ ignores activation requests from an inactive (menu-bar) app.
-    monkeypatch.setattr(macos, "_macos_major_version", lambda: 14)
+    monkeypatch.setattr(macos_platform, "_macos_major_version", lambda: 14)
     _packaged(monkeypatch, "1.1:120:2")
     state_path.write_text(json.dumps({"trusted_build": "1.0:100:1"}), encoding="utf-8")
     ax.trusted = False
@@ -1151,7 +1163,7 @@ def test_activation_without_accessibility_fails_on_sonoma(
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert "earlier version" in warnings[0]
-    monkeypatch.setattr(macos, "_macos_major_version", lambda: 13)
+    monkeypatch.setattr(macos_platform, "_macos_major_version", lambda: 13)
     assert plat.activate_window(ref) is True
 
 
