@@ -21,6 +21,7 @@ SRC = ROOT / "src"
 PKG_ROOT = "eye_tracker"
 
 FOUNDATION = {
+    "eye_tracker.command_text",
     "eye_tracker.types",
     "eye_tracker.config",
     "eye_tracker.paths",
@@ -59,36 +60,11 @@ ALLOWED: dict[str, set[str]] = {
 
 #: Documented exceptions from ARCHITECTURE.md. Each maps to the tracker entry that removes it.
 EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("eye_tracker.platform.hotkeys", "eye_tracker.cli"): "TD-ARCH-004",
-    ("eye_tracker.ui.settings_dialog", "eye_tracker.cli"): "TD-ARCH-005",
-    ("eye_tracker.ui.tray", "eye_tracker.cli"): "TD-ARCH-005",
     ("eye_tracker.ui.settings_dialog", "eye_tracker.diagnostics"): "TD-ARCH-002",
 }
 
 #: Module-level cycles that exist today (frozen). New cycles fail; shrinking is allowed.
 ALLOWED_CYCLES: list[frozenset[str]] = [
-    frozenset(
-        {
-            "eye_tracker.app",
-            "eye_tracker.cli",
-            "eye_tracker.diagnostics",
-            "eye_tracker.engine.controller",
-            "eye_tracker.ipc",
-            "eye_tracker.platform.hotkeys",
-            "eye_tracker.ui.about",
-            "eye_tracker.ui.calibration_window",
-            "eye_tracker.ui.countdown",
-            "eye_tracker.ui.curtain",
-            "eye_tracker.ui.icons",
-            "eye_tracker.ui.overlay",
-            "eye_tracker.ui.preview",
-            "eye_tracker.ui.settings_dialog",
-            "eye_tracker.ui.tray",
-            "eye_tracker.ui.update_dialog",
-            "eye_tracker.ui.util",
-            "eye_tracker.ui.wizard",
-        }
-    ),
     frozenset({"eye_tracker.update.fetch", "eye_tracker.update.winhttp"}),
 ]
 

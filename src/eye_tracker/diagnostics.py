@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from . import APP_NAME, __version__, paths
-from .cli import FROZEN_CLI_NAME, cli_command, format_command
+from .command_text import FROZEN_CLI_NAME, cli_command, format_command
 from .config import Settings, describe_settings
 from .platform.base import PlatformServices
 from .types import Monitor, Rect, layout_signature, virtual_bounds

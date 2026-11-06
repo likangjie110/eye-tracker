@@ -65,7 +65,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME, paths
-from ..cli import cli_command_text
+from ..command_text import cli_command_text
 from ..config import Settings, describe_settings
 from ..platform import autostart
 from ..platform.base import PlatformServices

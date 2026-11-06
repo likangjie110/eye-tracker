@@ -367,11 +367,13 @@ def test_factory_wayland_without_display_is_unsupported(monkeypatch: pytest.Monk
 def test_wayland_notes_name_the_commands_of_this_copy(monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression (r2-docs-01): the release packages put no "eye-tracker" command on
     the PATH, and a desktop shortcut bound to a missing command fails silently."""
-    from eye_tracker import cli
+    from eye_tracker import command_text
 
     appimage = "/home/me/Apps/Eye Tracker.AppImage"
     monkeypatch.setattr(
-        cli, "cli_command_text", lambda *args: cli.format_command([appimage, *args])
+        command_text,
+        "cli_command_text",
+        lambda *args: command_text.format_command([appimage, *args]),
     )
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("DISPLAY", raising=False)
@@ -386,7 +388,7 @@ def test_wayland_notes_name_the_commands_of_this_copy(monkeypatch: pytest.Monkey
         assert note is not None
         assert "eye-tracker ctl" not in note
         for action in ("toggle", "privacy-toggle", "calibrate"):
-            assert f"'{cli.format_command([appimage, 'ctl', action])}'" in note
+            assert f"'{command_text.format_command([appimage, 'ctl', action])}'" in note
     assert wayland is not None
     assert wayland.startswith("Wayland does not allow applications to register global hotkeys.")
     assert xwayland is not None

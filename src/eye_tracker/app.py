@@ -51,7 +51,7 @@ from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from . import APP_AUTHOR, APP_NAME, APP_SLUG, __version__, ipc, paths
-from .cli import cli_command_text
+from .command_text import cli_command_text
 from .config import Settings
 from .logging_setup import install_qt_message_handler, set_level, setup_logging
 from .platform import get_platform

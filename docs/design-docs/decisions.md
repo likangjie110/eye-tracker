@@ -108,7 +108,9 @@ numpy and value types. Qt and OpenCV are confined to `controller.py`, `vision/` 
 **Status:** accepted with debt (TD-ARCH-002, TD-ARCH-006).
 
 **Context.** A few import cycles appeared while the app grew (app ↔ cli, update fetch ↔ transport,
-platform hotkeys → CLI wording). Some are broken with function-level imports.
+platform hotkeys → CLI wording). Some are broken with function-level imports. The CLI-text cycle
+was removed in phase 4 by moving the naming helpers into `command_text.py`; the update transport
+pair remains.
 
 **Decision.** A lazy import is acceptable only as a temporary circuit breaker, with a comment
 explaining why and a tracker entry. It does not make the cycle disappear; it hides it from the

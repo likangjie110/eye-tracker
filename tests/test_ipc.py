@@ -695,11 +695,13 @@ def test_pipe_name_created_by_someone_else_is_not_joined(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Joining would give our pipe instances the squatter's access rules."""
-    from eye_tracker import cli
+    from eye_tracker import command_text
 
     monkeypatch.setattr(ipc, "PIPE_NAME_GRACE_S", 0.2)
     # The warning names the command as this copy is run (r2-docs-01).
-    monkeypatch.setattr(cli, "cli_command_text", lambda *args: " ".join(["eye-tracker-cli", *args]))
+    monkeypatch.setattr(
+        command_text, "cli_command_text", lambda *args: " ".join(["eye-tracker-cli", *args])
+    )
     squatter = _SquatterPipe(ipc.server_name())
     try:
         server = server_factory(recorder([]))

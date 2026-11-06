@@ -11,6 +11,7 @@ in depth in [`docs/architecture.md`](docs/architecture.md).
 
 ```text
 Layer 0 — foundation (no project imports, or only other Layer 0 modules)
+  command_text.py   the command lines shown to users (CLI, tray app, --config-dir)
   types.py          shared value types (Rect, Monitor, Observation, TrackingState)
   config.py         typed settings, validation, atomic persistence
   paths.py          config / data / log locations
@@ -67,12 +68,13 @@ pull request which violates them.
 | Exception | Why it exists today | Tracker |
 |---|---|---|
 | `engine/controller.py` imports PySide6, `panes/`, `platform/`, `vision/` | it is the orchestrator, and `engine/` is where it grew | TD-CPLX-001, TD-ARCH-001 |
-| `platform/hotkeys.py` → `cli.cli_command_text` (lazy import) | shared command-line wording | TD-ARCH-004 |
-| `ui/settings_dialog.py`, `ui/tray.py` → `cli.cli_command_text` | same wording, shown in dialogs | TD-ARCH-005 |
-| `app.py` ↔ `cli.py` (lazy import in `cli.py`) | `main()` starts the app; the app needs CLI wording | TD-ARCH-002 |
 | `panes/decider.py` → `engine/reading.py` | reuse of a pure rule | TD-ARCH-001 |
 | `diagnostics.py` → `platform/hotkeys.py`, `engine/scheduler.py` | a diagnostic report deliberately aggregates every layer | TD-ARCH-002 |
 | `update/fetch.py` ↔ `update/winhttp.py` (lazy import) | transport protocol lives in `fetch.py` | TD-ARCH-006 |
+
+Phase 4 removed the former `app ↔ cli`, `platform → cli` and `ui → cli` exceptions: the
+command-line naming helpers now live in the dependency-free `command_text.py`, which every layer
+may import.
 
 ## Threads
 

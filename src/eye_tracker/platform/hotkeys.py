@@ -2682,7 +2682,7 @@ def _ctl_commands() -> str:
     ``eye-tracker-cli`` inside it), and a desktop shortcut bound to a command
     that does not exist fails without a word. Built when a manager is created,
     because a ``--config-dir`` profile becomes part of the command."""
-    from ..cli import cli_command_text  # the cli module imports nothing from here
+    from ..command_text import cli_command_text  # naming only; no runtime dependency
 
     commands = [f"'{cli_command_text('ctl', action)}'" for action in _CTL_SHORTCUT_ACTIONS]
     return f"{', '.join(commands[:-1])} or {commands[-1]}"

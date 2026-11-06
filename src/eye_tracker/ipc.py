@@ -462,7 +462,7 @@ class InstanceServer(QObject):
             # Our own instance would have answered the probe or held the lock,
             # so this is another account's pipe. Qt would happily add instances
             # to it, and they would carry that account's access rules.
-            from .cli import cli_command_text  # named as this copy is run
+            from .command_text import cli_command_text  # named as this copy is run
 
             log.warning(
                 "The command channel %s already exists and does not belong to this instance "

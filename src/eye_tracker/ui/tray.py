@@ -20,7 +20,7 @@ from PySide6.QtGui import QAction, QCursor, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from .. import APP_NAME
-from ..cli import cli_command_text
+from ..command_text import cli_command_text
 from ..config import Settings
 from ..platform.hotkeys import Hotkey, format_hotkey
 from ..types import TrackingState

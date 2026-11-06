@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
@@ -215,7 +216,7 @@ def test_shown_commands_use_the_installers_command_on_the_path(
     folder = package("EyeTracker.exe", "eye-tracker-cli.exe", "eye-tracker.exe")
     gui_exe = str(folder / "EyeTracker.exe")
     on_path: list[str | None] = [str(folder / "eye-tracker.exe")]
-    monkeypatch.setattr(cli.shutil, "which", lambda name: on_path[0])
+    monkeypatch.setattr(shutil, "which", lambda name: on_path[0])
     assert cli.cli_command("ctl", "toggle") == ["eye-tracker", "ctl", "toggle"]
     assert cli._program_name() == "eye-tracker"
     # The app is still started windowed, never through the console command.
@@ -271,7 +272,7 @@ def test_shown_commands_from_source(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     python = venv / f"python{suffix}"
     python.write_bytes(b"")
     on_path: list[str | None] = [None]
-    monkeypatch.setattr(cli.shutil, "which", lambda name: on_path[0])
+    monkeypatch.setattr(shutil, "which", lambda name: on_path[0])
     monkeypatch.setattr(sys, "executable", "")  # an embedded interpreter
     assert cli.cli_command("doctor") == ["eye-tracker", "doctor"]
     monkeypatch.setattr(sys, "executable", str(python))
@@ -371,7 +372,7 @@ def _pretend_platform(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
     """Pretend to run on ``platform`` (``sys.platform``). ``shutil.which`` takes
     Windows-only code paths when that says win32, so it finds nothing here."""
     monkeypatch.setattr(sys, "platform", platform)
-    monkeypatch.setattr(cli.shutil, "which", lambda name, *args, **kwargs: None)
+    monkeypatch.setattr(shutil, "which", lambda name, *args, **kwargs: None)
 
 
 @pytest.fixture
