@@ -20,7 +20,13 @@ from typing import Any
 
 import pytest
 
-from eye_tracker.platform import linux
+from eye_tracker.platform import (
+    linux,
+    linux_camera,
+    linux_common,
+    linux_dbus,
+    linux_desktop,
+)
 from eye_tracker.platform.base import PlatformServices
 from eye_tracker.types import AppIdentity, Rect, WindowRef
 
@@ -44,7 +50,7 @@ _SESSION_VARS = (
 )
 
 #: The real ``subprocess.run``: the autouse ``tools`` fixture replaces it (it is
-#: the same function as ``linux.subprocess.run``), but the tests against the
+#: the same function as ``subprocess.run``), but the tests against the
 #: real kernel need real child processes.
 _real_subprocess_run = subprocess.run
 
@@ -113,10 +119,10 @@ def session_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def tools(monkeypatch: pytest.MonkeyPatch) -> FakeTools:
     fake = FakeTools()
-    monkeypatch.setattr(linux.shutil, "which", fake.which)
-    monkeypatch.setattr(linux.subprocess, "run", fake.run)
+    monkeypatch.setattr(shutil, "which", fake.which)
+    monkeypatch.setattr(subprocess, "run", fake.run)
     monkeypatch.setattr(linux, "_xcb_plugin_usable", lambda: True)
-    monkeypatch.setattr(linux, "_YDOTOOL_DEFAULT_SOCKETS", ())
+    monkeypatch.setattr(linux_common, "_YDOTOOL_DEFAULT_SOCKETS", ())
     return fake
 
 
@@ -143,7 +149,7 @@ class FakeDBus:
         self.answers: dict[str, Any] = {}  # method -> reply, or callable(call) -> reply
         self.calls: list[dict[str, Any]] = []
 
-    def call(self, **kwargs: Any) -> linux._DBusReply | None:
+    def call(self, **kwargs: Any) -> linux_dbus._DBusReply | None:
         self.calls.append(kwargs)
         answer = self.answers.get(kwargs["method"])
         return answer(kwargs) if callable(answer) else answer
@@ -221,10 +227,10 @@ def test_desktop_detection() -> None:
     assert linux._is_gnome_env({"XDG_CURRENT_DESKTOP": "ubuntu:GNOME"})
     assert linux._is_gnome_env({"XDG_SESSION_DESKTOP": "gnome-classic"})
     assert not linux._is_gnome_env({"XDG_CURRENT_DESKTOP": "KDE"})
-    assert linux._is_kde_env({"XDG_CURRENT_DESKTOP": "KDE"})
-    assert linux._is_kde_env({"DESKTOP_SESSION": "plasmawayland"})
-    assert linux._is_kde_env({"KDE_FULL_SESSION": "true"})
-    assert not linux._is_kde_env({"XDG_CURRENT_DESKTOP": "XFCE"})
+    assert linux_desktop._is_kde_env({"XDG_CURRENT_DESKTOP": "KDE"})
+    assert linux_desktop._is_kde_env({"DESKTOP_SESSION": "plasmawayland"})
+    assert linux_desktop._is_kde_env({"KDE_FULL_SESSION": "true"})
+    assert not linux_desktop._is_kde_env({"XDG_CURRENT_DESKTOP": "XFCE"})
 
 
 @pytest.mark.parametrize(
@@ -1049,7 +1055,7 @@ def test_session_locked_ignores_other_users_lockers(
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "i3")
     proc_tree.login(1000)
     proc_tree.process(300, [], comm="i3lock", loginuid=1001)  # another user's login
-    proc_tree.process(301, [], comm="slock", loginuid=linux._AUDIT_UID_UNSET)  # no login
+    proc_tree.process(301, [], comm="slock", loginuid=linux_desktop._AUDIT_UID_UNSET)  # no login
     owner = os.stat(proc_tree.proc / "300").st_uid
     monkeypatch.setattr(linux, "_getuid", lambda: owner + 1)  # none of the entries is ours
     assert plat.is_session_locked() is False
@@ -1061,7 +1067,7 @@ def test_session_locked_by_own_locker_outside_a_login(
     """A locker started by a service (no login UID) still counts when we own it."""
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "i3")
     proc_tree.login(1000)
-    proc_tree.process(300, [], comm="swaylock", loginuid=linux._AUDIT_UID_UNSET)
+    proc_tree.process(300, [], comm="swaylock", loginuid=linux_desktop._AUDIT_UID_UNSET)
     monkeypatch.setattr(linux, "_getuid", lambda: os.stat(proc_tree.proc / "300").st_uid)
     assert plat.is_session_locked() is True
 
@@ -1071,7 +1077,7 @@ def test_session_locked_by_a_setuid_locker_when_we_have_no_login_uid(
 ) -> None:
     """Started outside a login ourselves: the locker's login UID is compared with our UID."""
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "i3")
-    proc_tree.login(linux._AUDIT_UID_UNSET)
+    proc_tree.login(linux_desktop._AUDIT_UID_UNSET)
     proc_tree.process(400, [], comm="slock")
     owner = os.stat(proc_tree.proc / "400").st_uid
     monkeypatch.setattr(linux, "_getuid", lambda: owner + 1)  # root's entry, not ours
@@ -1223,9 +1229,9 @@ def test_locked_hint_through_dbus_in_process(
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")
     tools.install("loginctl")
     path = "/org/freedesktop/login1/session/_35"
-    dbus.answers["GetSession"] = linux._DBusReply((path,))
+    dbus.answers["GetSession"] = linux_dbus._DBusReply((path,))
     hints = [True, False]
-    dbus.answers["Get"] = lambda call: linux._DBusReply((hints.pop(0),))
+    dbus.answers["Get"] = lambda call: linux_dbus._DBusReply((hints.pop(0),))
     assert plat.is_session_locked() is True
     clock.advance(2.5)
     assert plat.is_session_locked() is False
@@ -1247,8 +1253,8 @@ def test_locked_hint_dbus_error_forgets_session_path(
     monkeypatch.setenv("XDG_SESSION_ID", "5")
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")
     tools.install("loginctl")
-    dbus.answers["GetSession"] = linux._DBusReply(("/org/freedesktop/login1/session/_35",))
-    dbus.answers["Get"] = linux._DBusReply((), "org.freedesktop.DBus.Error.UnknownObject")
+    dbus.answers["GetSession"] = linux_dbus._DBusReply(("/org/freedesktop/login1/session/_35",))
+    dbus.answers["Get"] = linux_dbus._DBusReply((), "org.freedesktop.DBus.Error.UnknownObject")
     assert plat.is_session_locked() is None
     clock.advance(2.5)
     assert plat.is_session_locked() is None
@@ -1275,8 +1281,8 @@ def test_locked_hint_unexpected_dbus_reply_falls_back_to_loginctl(
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "GNOME")
     tools.install("loginctl")
     tools.respond(["loginctl", "show-session"], (0, "yes\n"))
-    dbus.answers["GetSession"] = linux._DBusReply(session_reply)
-    dbus.answers["Get"] = linux._DBusReply(hint_reply)
+    dbus.answers["GetSession"] = linux_dbus._DBusReply(session_reply)
+    dbus.answers["Get"] = linux_dbus._DBusReply(hint_reply)
     assert plat.is_session_locked() is True
     assert tools.names() == ["loginctl"]
 
@@ -1386,7 +1392,7 @@ def test_idle_through_dbus_in_process(
 ) -> None:
     wayland(monkeypatch, "GNOME")
     tools.install("gdbus")
-    dbus.answers["GetIdletime"] = linux._DBusReply((12345,))
+    dbus.answers["GetIdletime"] = linux_dbus._DBusReply((12345,))
     assert plat.seconds_since_input() == pytest.approx(12.345)
     clock.advance(0.6)
     assert plat.seconds_since_input() == pytest.approx(12.345)
@@ -1401,7 +1407,9 @@ def test_idle_dbus_missing_service_backs_off(
     monkeypatch: pytest.MonkeyPatch, plat: linux.LinuxPlatform, dbus: FakeDBus, clock: Clock
 ) -> None:
     wayland(monkeypatch, "KDE")
-    dbus.answers["GetIdletime"] = linux._DBusReply((), "org.freedesktop.DBus.Error.ServiceUnknown")
+    dbus.answers["GetIdletime"] = linux_dbus._DBusReply(
+        (), "org.freedesktop.DBus.Error.ServiceUnknown"
+    )
     assert plat.seconds_since_input() is None
     clock.advance(30.0)
     assert plat.seconds_since_input() is None
@@ -1413,9 +1421,9 @@ def test_idle_dbus_hiccup_after_success_retries_soon(
 ) -> None:
     wayland(monkeypatch, "GNOME")
     replies = [
-        linux._DBusReply((500,)),
-        linux._DBusReply((), "org.freedesktop.DBus.Error.NoReply"),
-        linux._DBusReply((700,)),
+        linux_dbus._DBusReply((500,)),
+        linux_dbus._DBusReply((), "org.freedesktop.DBus.Error.NoReply"),
+        linux_dbus._DBusReply((700,)),
     ]
     dbus.answers["GetIdletime"] = lambda call: replies.pop(0)
     assert plat.seconds_since_input() == pytest.approx(0.5)
@@ -1431,7 +1439,7 @@ def test_idle_unexpected_dbus_reply_falls_back_to_gdbus(
     wayland(monkeypatch, "GNOME")
     tools.install("gdbus")
     tools.respond(["gdbus"], (0, "(uint64 1500,)"))
-    dbus.answers["GetIdletime"] = linux._DBusReply(("1500",))
+    dbus.answers["GetIdletime"] = linux_dbus._DBusReply(("1500",))
     assert plat.seconds_since_input() == pytest.approx(1.5)
     assert tools.names() == ["gdbus"]
 
@@ -1744,9 +1752,9 @@ def test_camera_permission(proc_tree: ProcTree, plat: linux.LinuxPlatform) -> No
 
 
 # ------------------------------------------------------------------ camera: refused opens
-def opened(foreign: bool | None) -> list[linux._CameraEvent]:
+def opened(foreign: bool | None) -> list[linux_camera._CameraEvent]:
     """A capture attempt that failed at once: read-write open, then close (merged)."""
-    return [linux._CameraEvent(opened=True, foreign=foreign, wrote=True)]
+    return [linux_camera._CameraEvent(opened=True, foreign=foreign, wrote=True)]
 
 
 @pytest.fixture
@@ -1802,8 +1810,8 @@ def test_device_listing_is_not_contention(streaming: ProcTree, plat: linux.Linux
     # A browser enumerating cameras opens each node read-only and closes it.
     plat._camera.handle_events(
         [
-            linux._CameraEvent(opened=True, foreign=True),
-            linux._CameraEvent(opened=False, foreign=True),
+            linux_camera._CameraEvent(opened=True, foreign=True),
+            linux_camera._CameraEvent(opened=False, foreign=True),
         ]
     )
     assert plat.camera_in_use_by_other_app() is False
@@ -1814,7 +1822,7 @@ def test_app_keeping_the_node_open_is_found_by_the_rescan(
 ) -> None:
     assert plat.camera_in_use_by_other_app() is False
     streaming.process(700, ["/dev/video0"], comm="zoom")  # opened, retrying, not closed yet
-    plat._camera.handle_events([linux._CameraEvent(opened=True, foreign=True)])
+    plat._camera.handle_events([linux_camera._CameraEvent(opened=True, foreign=True)])
     clock.advance(plat._camera.debounce_s)
     assert plat.camera_in_use_by_other_app() is True
 
@@ -1868,14 +1876,14 @@ def test_parse_fanotify_attributes_opens() -> None:
         + _fan_event(0x4000, 0)  # queue overflow: unknown
         + _fan_event(0x01, 0)  # an access event: not asked for, ignored
     )
-    assert linux._parse_fanotify(data, own) == [
-        linux._CameraEvent(opened=True, foreign=False),
-        linux._CameraEvent(opened=True, foreign=True),
-        linux._CameraEvent(opened=False, foreign=True, wrote=True),
-        linux._CameraEvent(opened=True, foreign=True, wrote=True),
-        linux._CameraEvent(opened=False, foreign=None),
+    assert linux_camera._parse_fanotify(data, own) == [
+        linux_camera._CameraEvent(opened=True, foreign=False),
+        linux_camera._CameraEvent(opened=True, foreign=True),
+        linux_camera._CameraEvent(opened=False, foreign=True, wrote=True),
+        linux_camera._CameraEvent(opened=True, foreign=True, wrote=True),
+        linux_camera._CameraEvent(opened=False, foreign=None),
     ]
-    assert linux._parse_fanotify(_fan_event(0x20, 0, length=0) * 3, own) == []  # malformed
+    assert linux_camera._parse_fanotify(_fan_event(0x20, 0, length=0) * 3, own) == []  # malformed
 
 
 def test_parse_inotify_has_no_attribution() -> None:
@@ -1885,10 +1893,10 @@ def test_parse_inotify_has_no_attribution() -> None:
         + b"x\0\0\0"
         + struct.pack("=iIII", 1, 0x08, 0, 0)
     )
-    assert linux._parse_inotify(data) == [
-        linux._CameraEvent(opened=True, foreign=None),
-        linux._CameraEvent(opened=False, foreign=None),
-        linux._CameraEvent(opened=False, foreign=None, wrote=True),
+    assert linux_camera._parse_inotify(data) == [
+        linux_camera._CameraEvent(opened=True, foreign=None),
+        linux_camera._CameraEvent(opened=False, foreign=None),
+        linux_camera._CameraEvent(opened=False, foreign=None, wrote=True),
     ]
 
 
@@ -1916,14 +1924,18 @@ def test_notifier_falls_back_when_the_kernel_refuses(monkeypatch: pytest.MonkeyP
         def __init__(self, paths: list[str]) -> None:
             opened.append((self.kind, list(paths)))
 
-    monkeypatch.setattr(linux, "_FanotifyNotifier", refused(OSError(1, "Operation not permitted")))
-    monkeypatch.setattr(linux, "_InotifyNotifier", Inotify)
+    monkeypatch.setattr(
+        linux_camera, "_FanotifyNotifier", refused(OSError(1, "Operation not permitted"))
+    )
+    monkeypatch.setattr(linux_camera, "_InotifyNotifier", Inotify)
     assert isinstance(linux._open_camera_notifier(["/dev/video0"]), Inotify)
     assert opened == [("inotify", ["/dev/video0"])]
     # A C library without the wrapper is no reason to fail either.
-    monkeypatch.setattr(linux, "_FanotifyNotifier", refused(AttributeError("fanotify_init")))
+    monkeypatch.setattr(linux_camera, "_FanotifyNotifier", refused(AttributeError("fanotify_init")))
     assert isinstance(linux._open_camera_notifier(["/dev/video0"]), Inotify)
-    monkeypatch.setattr(linux, "_InotifyNotifier", refused(OSError(24, "Too many open files")))
+    monkeypatch.setattr(
+        linux_camera, "_InotifyNotifier", refused(OSError(24, "Too many open files"))
+    )
     assert linux._open_camera_notifier(["/dev/video0"]) is None
 
 
@@ -1932,7 +1944,7 @@ class FakeNotifier:
     kind = "fake"
 
     def __init__(self) -> None:
-        self.events: list[list[linux._CameraEvent]] = []
+        self.events: list[list[linux_camera._CameraEvent]] = []
         self.ready = threading.Event()
         self.closed = False
         self.broken = False
@@ -1942,16 +1954,16 @@ class FakeNotifier:
     def alive(self) -> bool:
         return not self.broken and not self.closed
 
-    def push(self, events: list[linux._CameraEvent]) -> None:
+    def push(self, events: list[linux_camera._CameraEvent]) -> None:
         self.events.append(events)
         self.ready.set()
 
     def break_down(self) -> None:
         """Fail like a descriptor that cannot be read any more (see _FdNotifier.wait)."""
         self.broken = True
-        self.push([linux._CameraEvent(opened=False, foreign=None)])
+        self.push([linux_camera._CameraEvent(opened=False, foreign=None)])
 
-    def wait(self, timeout: float) -> list[linux._CameraEvent]:
+    def wait(self, timeout: float) -> list[linux_camera._CameraEvent]:
         self.waits += 1
         if self.ready.wait(timeout):
             self.ready.clear()
@@ -2020,7 +2032,7 @@ def test_camera_thread_rescans_on_open_events(
     assert _eventually(lambda: platform.camera_in_use_by_other_app() is False)
     assert _eventually(lambda: bool(notifiers))
     proc_tree.process(100, ["/dev/video0"])  # an app starts streaming ...
-    notifiers[0].push([linux._CameraEvent(opened=True, foreign=None)])  # ... and is noticed
+    notifiers[0].push([linux_camera._CameraEvent(opened=True, foreign=None)])  # ... and is noticed
     assert _eventually(lambda: platform.camera_in_use_by_other_app() is True)
 
 
@@ -2092,15 +2104,15 @@ def test_camera_watcher_polls_once_its_notifier_broke(
 
 
 def test_fd_notifier_reports_a_failing_descriptor_once(tmp_path: Path) -> None:
-    class Notifier(linux._FdNotifier):
-        def _parse(self, data: bytes) -> list[linux._CameraEvent]:
+    class Notifier(linux_camera._FdNotifier):
+        def _parse(self, data: bytes) -> list[linux_camera._CameraEvent]:
             raise AssertionError("nothing can be read")
 
     # A write-only file: waiting fails (Windows: select() wants sockets) or reading does.
     fd = os.open(tmp_path / "node", os.O_WRONLY | os.O_CREAT)
     notifier = Notifier(fd)
     assert notifier.alive
-    assert notifier.wait(0.01) == [linux._CameraEvent(opened=False, foreign=None)]
+    assert notifier.wait(0.01) == [linux_camera._CameraEvent(opened=False, foreign=None)]
     assert not notifier.alive  # closed: the watcher polls from now on
     assert notifier._fd == -1
     assert notifier.wait(0.0) == []
@@ -2111,7 +2123,7 @@ def test_fd_notifier_reports_a_failing_descriptor_once(tmp_path: Path) -> None:
 def test_real_notifier_reports_opens(tmp_path: Path, kind: str) -> None:
     node = tmp_path / "video0"
     node.write_text("")
-    cls = linux._FanotifyNotifier if kind == "fanotify" else linux._InotifyNotifier
+    cls = linux_camera._FanotifyNotifier if kind == "fanotify" else linux_camera._InotifyNotifier
     try:
         notifier = cls([str(node)])
     except OSError as exc:
@@ -2124,7 +2136,7 @@ def test_real_notifier_reports_opens(tmp_path: Path, kind: str) -> None:
         _real_subprocess_run(
             [sys.executable, "-c", f"open({str(node)!r}, 'r+b').close()"], check=True, timeout=60
         )
-        events: list[linux._CameraEvent] = []
+        events: list[linux_camera._CameraEvent] = []
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline and not any(e.wrote for e in events):
             events += notifier.wait(0.2)
@@ -2147,7 +2159,7 @@ class FakeWindow:
         self.id = wid
         self.props: dict[str, list[int]] = {}
         self.geometry = (0, 0, 100, 100)
-        self.map_state = linux._X_IS_VIEWABLE
+        self.map_state = linux_common._X_IS_VIEWABLE
         self.sent: list[tuple[Any, int]] = []
         self.wm_class: tuple[str, str] | None = None
 
@@ -2155,7 +2167,7 @@ class FakeWindow:
         return self.wm_class
 
     def get_full_property(self, atom: int, prop_type: int) -> Any:
-        assert prop_type == linux._X_ANY_PROPERTY_TYPE
+        assert prop_type == linux_common._X_ANY_PROPERTY_TYPE
         values = self.props.get(self.display.atom_names[atom])
         return None if values is None else SimpleNamespace(value=list(values))
 
@@ -2240,7 +2252,7 @@ class FakeDisplay:
         for name, values in props.items():
             win.props[name] = [self.intern_atom(v) if isinstance(v, str) else v for v in values]
         self.windows[wid] = win
-        for name in (*linux._SKIPPED_WINDOW_TYPES, "_NET_WM_STATE_HIDDEN"):
+        for name in (*linux_common._SKIPPED_WINDOW_TYPES, "_NET_WM_STATE_HIDDEN"):
             self.intern_atom(name)
         return win
 

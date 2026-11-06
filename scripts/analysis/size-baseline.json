@@ -18,7 +18,7 @@
     "src/eye_tracker/platform/hotkeys_base.py": 823,
     "src/eye_tracker/platform/hotkeys_macos.py": 722,
     "src/eye_tracker/platform/hotkeys_x11.py": 698,
-    "src/eye_tracker/platform/linux.py": 2528,
+    "src/eye_tracker/platform/linux.py": 1100,
     "src/eye_tracker/platform/macos.py": 1230,
     "src/eye_tracker/platform/win_uia.py": 750,
     "src/eye_tracker/platform/windows_api.py": 839,
