@@ -12,6 +12,7 @@ import contextlib
 import json
 import logging
 import math
+import os
 import threading
 from pathlib import Path
 from typing import IO, Any
@@ -50,8 +51,14 @@ class TraceWriter:
         with self._lock:
             try:
                 if self._fh is None:
-                    self.path.parent.mkdir(parents=True, exist_ok=True)
-                    self._fh = self.path.open("a", encoding="utf-8", newline="\n")
+                    created = not self.path.parent.exists()
+                    self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    if created:
+                        with contextlib.suppress(OSError):
+                            os.chmod(self.path.parent, 0o700)
+                    fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                    os.chmod(self.path, 0o600)  # also tightens a pre-existing file
+                    self._fh = os.fdopen(fd, "a", encoding="utf-8", newline="\n")
                     log.info("Writing tracking trace to %s", self.path)
                 self._fh.write(json.dumps(record, separators=(",", ":")) + "\n")
                 self._lines += 1

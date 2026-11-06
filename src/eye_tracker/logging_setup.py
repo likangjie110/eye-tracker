@@ -20,6 +20,7 @@ import logging.handlers
 import os
 import sys
 import threading
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -70,6 +71,26 @@ def parse_level(level: str | int | None, default: int = logging.INFO) -> int:
     return default
 
 
+class _PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotating log file that is re-created owner-only (0600)."""
+
+    def _open(self) -> Any:
+        stream = super()._open()
+        with contextlib.suppress(OSError):
+            os.chmod(self.baseFilename, 0o600)
+        return stream
+
+
+def _prepare_log_file(path: Path) -> None:
+    """Create the log directory (0700) and file (0600) owner-only."""
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(path.parent, 0o700)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        os.close(fd)
+        os.chmod(path, 0o600)
+
+
 def setup_logging(level: str = "INFO", console: bool = False, *, log_to_file: bool = True) -> None:
     """Configure the root logger. Safe to call again (previous handlers are replaced).
 
@@ -89,8 +110,10 @@ def setup_logging(level: str = "INFO", console: bool = False, *, log_to_file: bo
     new_handlers: list[logging.Handler] = []
     if log_to_file:
         try:
-            file_handler = logging.handlers.RotatingFileHandler(
-                paths.log_file(),
+            log_path = paths.log_file()
+            _prepare_log_file(log_path)
+            file_handler = _PrivateRotatingFileHandler(
+                log_path,
                 maxBytes=MAX_BYTES,
                 backupCount=BACKUP_COUNT,
                 encoding="utf-8",
