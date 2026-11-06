@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
+from types import ModuleType
 
 import pytest
-from scripts import version as version_script
 
 from eye_tracker import __version__
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_version_script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("version_script", ROOT / "scripts" / "version.py")
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+version_script = _load_version_script()
 
 
 def test_reads_the_current_version() -> None:
