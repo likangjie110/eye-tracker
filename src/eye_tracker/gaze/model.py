@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -346,63 +347,113 @@ class GazeModel:
         kind = d.get("kind", MODEL_KIND)
         if kind != MODEL_KIND:
             raise ValueError(f"unsupported model kind {kind!r}")
-        try:
-            model = cls(
-                degree=int(d.get("degree", 2)),
-                alpha=float(d.get("alpha", 1.0)),
-                nonlinear=_index_list(d.get("nonlinear")),
-            )
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(f"invalid model parameters: {exc}") from exc
+        model = _model_parameters(d)
         if "coef" not in d:
             return model  # an unfitted model was saved
-
-        try:
-            mean = _vector(d["mean"], "mean")
-            std = _vector(d["std"], "std")
-            coef = np.asarray(d["coef"], dtype=np.float64)
-            bounds = Rect.from_list(d["bounds"])
-            lo = _vector(d["lo"], "lo") if "lo" in d else None
-            hi = _vector(d["hi"], "hi") if "hi" in d else None
-            linear = (
-                np.asarray(d["linear_coef"], dtype=np.float64)
-                if d.get("linear_coef") is not None
-                else None
-            )
-            raw_regions = d.get("away_regions") or []
-            if not isinstance(raw_regions, list):
-                raise TypeError("away_regions must be a list")
-            regions = tuple(AwayRegion.from_dict(r) for r in raw_regions)
-        except (KeyError, TypeError, ValueError, OverflowError) as exc:
-            # OverflowError: int(inf) for a bounds value such as 1e400 or Infinity.
-            raise ValueError(f"invalid model data: {exc}") from exc
-
-        n = mean.shape[0]
-        if n == 0 or std.shape != (n,):
-            raise ValueError("model arrays have inconsistent shapes")
-        _check_indices(model.nonlinear, n)
-        if coef.shape != (_n_terms(n, model.degree, model.nonlinear), 2):
-            raise ValueError("model arrays have inconsistent shapes")
-        if (lo is None) != (hi is None):
-            raise ValueError("model clip range is incomplete")
-        arrays = [mean, std, coef]
-        if lo is not None and hi is not None:
-            if lo.shape != (n,) or hi.shape != (n,) or np.any(hi < lo):
-                raise ValueError("model clip range is inconsistent")
-            arrays += [lo, hi]
-        if linear is not None:
-            if linear.shape != (1 + n, 2):
-                raise ValueError("model arrays have inconsistent shapes")
-            arrays.append(linear)
-        if not all(np.all(np.isfinite(a)) for a in arrays):
-            raise ValueError("model contains non-finite numbers")
-        if np.any(std <= 0.0) or bounds.w <= 0 or bounds.h <= 0:
-            raise ValueError("model scale parameters must be positive")
-
-        model._mean, model._std, model._lo, model._hi = mean, std, lo, hi
-        model._coef, model._bounds, model._linear_coef = coef, bounds, linear
-        model._away_regions = regions
+        arrays = _load_model_arrays(d)
+        _validate_model_arrays(model, arrays)
+        model._mean, model._std, model._lo, model._hi = (
+            arrays.mean,
+            arrays.std,
+            arrays.lo,
+            arrays.hi,
+        )
+        model._coef, model._bounds, model._linear_coef = (
+            arrays.coef,
+            arrays.bounds,
+            arrays.linear,
+        )
+        model._away_regions = arrays.regions
         return model
+
+
+@dataclass(slots=True)
+class _ModelArrays:
+    """The fitted arrays of a saved model, before validation."""
+
+    mean: np.ndarray
+    std: np.ndarray
+    coef: np.ndarray
+    bounds: Rect
+    lo: np.ndarray | None
+    hi: np.ndarray | None
+    linear: np.ndarray | None
+    regions: tuple[AwayRegion, ...]
+
+
+def _model_parameters(d: dict[str, Any]) -> GazeModel:
+    """Build the (possibly unfitted) model from its scalar parameters."""
+    try:
+        return GazeModel(
+            degree=int(d.get("degree", 2)),
+            alpha=float(d.get("alpha", 1.0)),
+            nonlinear=_index_list(d.get("nonlinear")),
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"invalid model parameters: {exc}") from exc
+
+
+def _load_model_arrays(d: dict[str, Any]) -> _ModelArrays:
+    """Read the fitted arrays, mapping missing/malformed values to ``invalid model data``."""
+    try:
+        mean = _vector(d["mean"], "mean")
+        std = _vector(d["std"], "std")
+        coef = np.asarray(d["coef"], dtype=np.float64)
+        bounds = Rect.from_list(d["bounds"])
+        lo = _vector(d["lo"], "lo") if "lo" in d else None
+        hi = _vector(d["hi"], "hi") if "hi" in d else None
+        linear = (
+            np.asarray(d["linear_coef"], dtype=np.float64)
+            if d.get("linear_coef") is not None
+            else None
+        )
+        raw_regions = d.get("away_regions") or []
+        if not isinstance(raw_regions, list):
+            raise TypeError("away_regions must be a list")
+        regions = tuple(AwayRegion.from_dict(r) for r in raw_regions)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        # OverflowError: int(inf) for a bounds value such as 1e400 or Infinity.
+        raise ValueError(f"invalid model data: {exc}") from exc
+    return _ModelArrays(mean, std, coef, bounds, lo, hi, linear, regions)
+
+
+def _validate_model_arrays(model: GazeModel, arrays: _ModelArrays) -> None:
+    """Check the array shapes, ranges and finiteness of a saved model."""
+    n = arrays.mean.shape[0]
+    if n == 0 or arrays.std.shape != (n,):
+        raise ValueError("model arrays have inconsistent shapes")
+    _check_indices(model.nonlinear, n)
+    if arrays.coef.shape != (_n_terms(n, model.degree, model.nonlinear), 2):
+        raise ValueError("model arrays have inconsistent shapes")
+    _validate_clip_range(arrays, n)
+    _validate_linear_coef(arrays, n)
+    _validate_finite(arrays)
+    if np.any(arrays.std <= 0.0) or arrays.bounds.w <= 0 or arrays.bounds.h <= 0:
+        raise ValueError("model scale parameters must be positive")
+
+
+def _validate_clip_range(arrays: _ModelArrays, n: int) -> None:
+    if (arrays.lo is None) != (arrays.hi is None):
+        raise ValueError("model clip range is incomplete")
+    if arrays.lo is not None and arrays.hi is not None:
+        bad_shape = arrays.lo.shape != (n,) or arrays.hi.shape != (n,)
+        if bad_shape or np.any(arrays.hi < arrays.lo):
+            raise ValueError("model clip range is inconsistent")
+
+
+def _validate_linear_coef(arrays: _ModelArrays, n: int) -> None:
+    if arrays.linear is not None and arrays.linear.shape != (1 + n, 2):
+        raise ValueError("model arrays have inconsistent shapes")
+
+
+def _validate_finite(arrays: _ModelArrays) -> None:
+    checked = [arrays.mean, arrays.std, arrays.coef]
+    if arrays.lo is not None and arrays.hi is not None:
+        checked += [arrays.lo, arrays.hi]
+    if arrays.linear is not None:
+        checked.append(arrays.linear)
+    if not all(np.all(np.isfinite(a)) for a in checked):
+        raise ValueError("model contains non-finite numbers")
 
 
 # ------------------------------------------------------------ model selection
