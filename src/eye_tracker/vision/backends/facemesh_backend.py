@@ -162,7 +162,7 @@ from .facemesh_output import (  # noqa: F401 - re-exported
     OutputMixin,
 )
 from .lite_backend import create_yunet
-from .overlay import as_bgr
+from .overlay import as_bgr  # noqa: F401 - kept importable from here
 
 MODEL_FILE = "face_landmarks_detector.tflite"
 GEOMETRY_FILE = "geometry_pipeline_metadata_landmarks.binarypb"
@@ -321,84 +321,6 @@ class FaceMeshBackend(LandmarkMixin, OutputMixin, VisionBackend):
         self._blink.reset()
 
     # ------------------------------------------------------------ analysis
-    def process(self, frame_bgr: np.ndarray, timestamp: float) -> Observation:
-        if self._closed or self._net is None:
-            raise RuntimeError("FaceMeshBackend is closed")
-        started = time.perf_counter()
-        frame = as_bgr(frame_bgr)
-        height, width = frame.shape[:2]
-        if (width, height) != self._frame_size:
-            self._frame_size = (width, height)
-            self._forget_tracking()
-        guard = self._max_faces >= 2
-
-        # YuNet rows found in this very frame, if any search ran (reused below so
-        # that no frame runs the detector twice at the same resolution).
-        detections: list[np.ndarray] | None = None
-        # Shoulder guard: a fresh face count on this frame, if one is due.
-        counted: list[np.ndarray] | None = None
-        if guard and not 0.0 <= timestamp - self._guard_ts < GUARD_PERIOD_S:
-            counted = detections = self._guard_count(frame, timestamp)
-
-        # Landmarks, the crop they came from and the pass's face-presence logit.
-        found: tuple[np.ndarray, Roi, float] | None = None
-        roi = self._roi
-        tracking = roi is not None
-        if roi is not None:
-            # With the guard on, its counts double as primary-face checks; this
-            # only stays false for a while after a stronger face was rejected.
-            check = self._primary_check_due(timestamp)
-            if check and detections is None and not guard:
-                detections = self._detect(frame, DETECT_WIDTH)
-                self._schedule_primary_check(timestamp, PRIMARY_CHECK_S)
-            candidate = None
-            if check and detections is not None:
-                candidate = self._primary_candidate(roi, detections, width, height)
-            if candidate is not None:
-                # A clearly stronger face elsewhere (the user came back): it takes
-                # over if the network reads it confidently; otherwise (a profile,
-                # a hand over it, half out of the picture) the tracked face stays
-                # rather than being lost to it, and the next try waits.
-                result = self._infer(frame, candidate)
-                if result is not None and result[1] >= CONFIDENT_LOGIT:
-                    self._pose.reset()
-                    found = (result[0], candidate, result[1])
-                else:
-                    self._schedule_primary_check(timestamp, PRIMARY_CHECK_S)
-            if found is None:
-                result = self._infer(frame, roi)
-                if result is not None:
-                    found = (result[0], roi, result[1])
-        if found is None:
-            # Lost (or never had) the face: find one. With the guard on, the
-            # search doubles as a fresh face count.
-            tracking = False
-            self._pose.reset()
-            if detections is None:
-                if guard:
-                    detections = counted = self._guard_count(frame, timestamp)
-                else:
-                    detections = self._detect(frame, DETECT_WIDTH)
-            if not guard:
-                # The search chose the primary face; look again soon, the user
-                # may be on the way into the picture.
-                self._schedule_primary_check(timestamp, PRIMARY_RECHECK_S)
-            # The face tracked until now (lost on this very frame) or the one
-            # that was already unreadable before.
-            lost = roi if roi is not None else self._unreadable
-            found = self._acquire(frame, detections, width, height, timestamp, lost)
-
-        if found is None:
-            self._note_settled(True)
-            return self._without_landmarks(detections or [], timestamp, width, height, started)
-        points, settled, logit = self._settle(frame, *found, detections, reseed=tracking)
-        # A doubtful fit (a hand coming over the face) may not survive the next
-        # pass on the very same picture, so the motion gate must not repeat it.
-        self._note_settled(settled and logit >= CONFIDENT_LOGIT)
-        roi = roi_from_landmarks(points)
-        self._roi = roi if roi.valid(width, height) else None
-        return self._with_landmarks(points, counted, timestamp, width, height, started)
-
     def _acquire(
         self,
         frame: np.ndarray,

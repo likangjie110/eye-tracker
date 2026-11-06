@@ -1,28 +1,38 @@
-"""Observation building and preview drawing for the face-mesh backend.
+"""Frame analysis, observation building and preview drawing for the face-mesh backend.
 
-Mixed into :class:`~.facemesh_backend.FaceMeshBackend`: turns the other detected
-faces into normalised boxes, builds the :class:`~eye_tracker.types.Observation`
-for a frame without landmarks and draws the preview overlay. The mixin only
-declares the state it uses and never imports the backend at runtime.
+Mixed into :class:`~.facemesh_backend.FaceMeshBackend`: runs the per-frame analysis pipeline
+(guard count, tracked-face primary check, re-acquisition and settling), turns the other detected
+faces into normalised boxes, builds the :class:`~eye_tracker.types.Observation` for a frame with or
+without landmarks and draws the preview overlay. The mixin only declares the state and host methods
+it uses and never imports the backend at runtime.
 """
 
 from __future__ import annotations
 
 import math
 import time
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from ...types import Observation
 from .facemesh_detection import Box, _det_box, _det_score, _Drawing
-from .facemesh_geometry import Roi
+from .facemesh_geometry import PoseEstimator, Roi, roi_from_landmarks
+from .facemesh_landmarks import (
+    CONFIDENT_LOGIT,
+    DETECT_WIDTH,
+    GUARD_PERIOD_S,
+    PRIMARY_CHECK_S,
+    PRIMARY_RECHECK_S,
+)
 from .overlay import (
     COLOR_BOX,
     COLOR_EYE,
     COLOR_IRIS,
     COLOR_OTHER,
     COLOR_POSE,
+    as_bgr,
     draw_box,
     draw_label,
     line_thickness,
@@ -45,16 +55,176 @@ _IRIS_B = (473, 474, 475, 476, 477)
 
 
 class OutputMixin:
-    """Observation and preview half of the face-mesh backend."""
+    """Frame analysis, observation and preview half of the face-mesh backend."""
 
     # State owned by ``FaceMeshBackend.__init__``; declared here so the methods
     # below type-check without importing the backend (there is no runtime cycle).
+    _closed: bool
+    _net: cv2.dnn.Net | None
+    _frame_size: tuple[int, int] | None
     _max_faces: int
     _roi: Roi | None
     _guard_others: list[Box]
     _last: _Drawing | None
     _landmarks: np.ndarray | None
     _nose_tip: np.ndarray
+    _pose: PoseEstimator
+    _guard_ts: float
+    _unreadable: Roi | None
+
+    if TYPE_CHECKING:
+        # Implemented by LandmarkMixin (landmark helpers) or FaceMeshBackend.
+        def _forget_tracking(self) -> None: ...
+        def _guard_count(self, frame: np.ndarray, timestamp: float) -> list[np.ndarray]: ...
+        def _detect(self, frame: np.ndarray, input_width: int) -> list[np.ndarray]: ...
+        def _infer(self, frame: np.ndarray, roi: Roi) -> tuple[np.ndarray, float] | None: ...
+        def _primary_check_due(self, timestamp: float) -> bool: ...
+        def _schedule_primary_check(self, timestamp: float, period: float) -> None: ...
+        @staticmethod
+        def _primary_candidate(
+            roi: Roi, detections: list[np.ndarray], width: int, height: int
+        ) -> Roi | None: ...
+        def _note_settled(self, settled: bool) -> None: ...
+        def _acquire(
+            self,
+            frame: np.ndarray,
+            detections: list[np.ndarray],
+            width: int,
+            height: int,
+            timestamp: float,
+            lost: Roi | None = None,
+        ) -> tuple[np.ndarray, Roi, float] | None: ...
+        def _settle(
+            self,
+            frame: np.ndarray,
+            points: np.ndarray,
+            used: Roi,
+            logit: float,
+            detections: list[np.ndarray] | None,
+            *,
+            reseed: bool,
+        ) -> tuple[np.ndarray, bool, float]: ...
+        def _with_landmarks(
+            self,
+            points: np.ndarray,
+            counted: list[np.ndarray] | None,
+            timestamp: float,
+            width: int,
+            height: int,
+            started: float,
+        ) -> Observation: ...
+
+    # -------------------------------------------------------------- analysis
+    def process(self, frame_bgr: np.ndarray, timestamp: float) -> Observation:
+        if self._closed or self._net is None:
+            raise RuntimeError("FaceMeshBackend is closed")
+        started = time.perf_counter()
+        frame = as_bgr(frame_bgr)
+        height, width = frame.shape[:2]
+        if (width, height) != self._frame_size:
+            self._frame_size = (width, height)
+            self._forget_tracking()
+        guard = self._max_faces >= 2
+
+        # YuNet rows found in this very frame, if any search ran (reused below so
+        # that no frame runs the detector twice at the same resolution).
+        detections: list[np.ndarray] | None = None
+        # Shoulder guard: a fresh face count on this frame, if one is due.
+        counted: list[np.ndarray] | None = None
+        if guard and not 0.0 <= timestamp - self._guard_ts < GUARD_PERIOD_S:
+            counted = detections = self._guard_count(frame, timestamp)
+
+        # Landmarks, the crop they came from and the pass's face-presence logit.
+        roi = self._roi
+        tracking = roi is not None
+        found: tuple[np.ndarray, Roi, float] | None = None
+        if roi is not None:
+            found, detections = self._tracked_face(
+                frame, timestamp, width, height, roi, detections, guard
+            )
+        if found is None:
+            # Lost (or never had) the face: find one. With the guard on, the
+            # search doubles as a fresh face count.
+            tracking = False
+            self._pose.reset()
+            detections, counted, found = self._search_face(
+                frame, timestamp, width, height, roi, detections, counted, guard
+            )
+        if found is None:
+            self._note_settled(True)
+            return self._without_landmarks(detections or [], timestamp, width, height, started)
+        points, settled, logit = self._settle(frame, *found, detections, reseed=tracking)
+        # A doubtful fit (a hand coming over the face) may not survive the next
+        # pass on the very same picture, so the motion gate must not repeat it.
+        self._note_settled(settled and logit >= CONFIDENT_LOGIT)
+        roi = roi_from_landmarks(points)
+        self._roi = roi if roi.valid(width, height) else None
+        return self._with_landmarks(points, counted, timestamp, width, height, started)
+
+    def _tracked_face(
+        self,
+        frame: np.ndarray,
+        timestamp: float,
+        width: int,
+        height: int,
+        roi: Roi,
+        detections: list[np.ndarray] | None,
+        guard: bool,
+    ) -> tuple[tuple[np.ndarray, Roi, float] | None, list[np.ndarray] | None]:
+        """Analyse the tracked crop; a clearly stronger face elsewhere may take over."""
+        # With the guard on, its counts double as primary-face checks; this
+        # only stays false for a while after a stronger face was rejected.
+        check = self._primary_check_due(timestamp)
+        if check and detections is None and not guard:
+            detections = self._detect(frame, DETECT_WIDTH)
+            self._schedule_primary_check(timestamp, PRIMARY_CHECK_S)
+        candidate = None
+        if check and detections is not None:
+            candidate = self._primary_candidate(roi, detections, width, height)
+        found = None
+        if candidate is not None:
+            # A clearly stronger face elsewhere (the user came back): it takes
+            # over if the network reads it confidently; otherwise (a profile,
+            # a hand over it, half out of the picture) the tracked face stays
+            # rather than being lost to it, and the next try waits.
+            result = self._infer(frame, candidate)
+            if result is not None and result[1] >= CONFIDENT_LOGIT:
+                self._pose.reset()
+                found = (result[0], candidate, result[1])
+            else:
+                self._schedule_primary_check(timestamp, PRIMARY_CHECK_S)
+        if found is None:
+            result = self._infer(frame, roi)
+            if result is not None:
+                found = (result[0], roi, result[1])
+        return found, detections
+
+    def _search_face(
+        self,
+        frame: np.ndarray,
+        timestamp: float,
+        width: int,
+        height: int,
+        roi: Roi | None,
+        detections: list[np.ndarray] | None,
+        counted: list[np.ndarray] | None,
+        guard: bool,
+    ) -> tuple[list[np.ndarray], list[np.ndarray] | None, tuple[np.ndarray, Roi, float] | None]:
+        """Find a face afresh; with the guard on the search also counts faces."""
+        if detections is None:
+            if guard:
+                detections = counted = self._guard_count(frame, timestamp)
+            else:
+                detections = self._detect(frame, DETECT_WIDTH)
+        if not guard:
+            # The search chose the primary face; look again soon, the user
+            # may be on the way into the picture.
+            self._schedule_primary_check(timestamp, PRIMARY_RECHECK_S)
+        # The face tracked until now (lost on this very frame) or the one
+        # that was already unreadable before.
+        lost = roi if roi is not None else self._unreadable
+        found = self._acquire(frame, detections, width, height, timestamp, lost)
+        return detections, counted, found
 
     # ------------------------------------------------------------- observation
     def _other_faces(
