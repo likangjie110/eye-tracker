@@ -153,6 +153,11 @@ tag vX.Y.Z
 
 ### 4.3 门禁自证（规则 §11.1 第 4 条）
 
+实跑验证：GitHub Actions run
+[42154283481](https://github.com/likangjie110/eye-tracker/actions/runs/42154283481)
+（2026-11-06，fork 的 `harnessing` 分支）：lint job（含新增两个 step）与 5 个测试矩阵 job
+全部通过。
+
 每一条新不变量都有“注入违规必须失败”的测试，而不是只靠人工：
 
 | 不变量 | 自证测试 |

@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**（2026-11-06 人工确认；按推荐默认执行，决策结果见 §6.1）
+- 状态：**已确认**；阶段 1–3 已完成（2026-11-06），阶段 4 待开始。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -406,7 +406,20 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | P3-7 | CI 增量接入 | L | `.github/workflows/ci.yml` 修订 | 只增量、不改发布流水线；新 job 在 PR 上跑；故意破坏样例使 CI 红（实测） |
 | P3-8 | 门禁自证（DoD 4） | R | `docs/CI.md` §4 + 测试 | 每条新不变量都有一个“注入违规 → 必须失败”的测试；结果记录在案 |
 
+**阶段 3 进度（2026-11-06）**：P3-1…P3-8 已完成。
+
+- 统一入口 `scripts/check.py`（11 个门禁，`--quick` 跳过 pytest），本地实测 11/11 通过。
+- `pre-commit` 本地钩子（可选安装）：ruff fix/format、隐私、大小、文档。
+- 大小门禁 `scripts/lint_size.py` + 基线（22 文件 / 41 函数 / 16 类），只缩不增。
+- 结构测试 `tests/test_architecture.py`（9 用例）：依赖方向 R1–R5、纯逻辑无 Qt/OpenCV、
+  环冻结、例外表只缩不增，含 4 个负例。
+- CI 增量：lint job 新增“配置文档同步”“大小门禁”两个 blocking step，未改发布流水线。
+- 门禁自证：大小 5 个负例、结构 4 个负例、文档 2 个负例、隐私既有 291 个参数化用例；
+  汇总见 `docs/CI.md` §4.3。
+
 **阶段 3 验收**：任一新提交都被自动校验；所有新门禁可本地复现；门禁实测能拦截。
+
+**阶段 3 验收结论（2026-11-06）**：满足。本地 `scripts/check.py` 11/11 通过；GitHub CI run [42154283481](https://github.com/likangjie110/eye-tracker/actions/runs/42154283481) 在 lint + 5 个测试矩阵 job 上全部通过（新增 step 已在 CI 实跑）。
 
 ### 阶段 4 · 问题修复与重构（按 B1→B7 串行）
 
@@ -497,4 +510,9 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 2 | 建 `AGENTS.md`（≤200 行地图）、根 `ARCHITECTURE.md`（分层规则 R1–R5 + 例外表）、`docs/index.md`、`docs/design-docs/`（index/core-beliefs/decisions）、`docs/QUALITY_SCORE.md`、`completed/` 归档约定 | `12a2a60` | 常驻文档用英文（D5）；过程文档中文 |
 | 2026-11-06 | 阶段 2 | 修正 4 组过期内容与“零网络”绝对表述；architecture code map 补齐 update/paths/logging/trace；CONTRIBUTING 指向 AGENTS；`.gitignore` 忽略 `prompt-history.txt`（D6） | `243e0f8` | 文档门禁从 6 用例扩到 15：必填文档、AGENTS 行数、包覆盖、索引完整性、版本漂移、网络措辞、troubleshooting 入链；含 2 个“注入漂移必须失败”的负例 |
 | 2026-11-06 | 阶段 2 | 全量门禁：ruff / format / mypy×3 / scripts / privacy / models / pytest（2961 passed / 55 skipped） | — | 阶段 2 主体完成；剩余文档去重（TD-DOC-015）、锚点/外链（TD-DOC-013/017）转到阶段 3 |
+| 2026-11-06 | 阶段 3 | 结构测试：依赖方向 R1–R5、纯逻辑无 Qt/OpenCV、环冻结、例外表只缩不增（9 用例，4 个负例） | `93dbee6` | 把 ARCHITECTURE.md 的文字规则变成 pytest |
+| 2026-11-06 | 阶段 3 | 大小门禁 + 冻结基线（22 文件 / 41 函数 / 16 类）；新增/增长/静默改基线都会被拒绝 | `3bfc7e8` | D10：冻结存量、只卡新增；基线只能缩 |
+| 2026-11-06 | 阶段 3 | 统一本地门禁入口 `scripts/check.py`（11 门禁，--quick/--list/--fail-fast） | `48de2eb` | 本地与 CI 同序；4 个一致性测试 |
+| 2026-11-06 | 阶段 3 | CI 增量（配置文档 + 大小门禁两个 blocking step）、pre-commit 本地钩子、AGENTS/CONTRIBUTING/CI.md 同步 | `62bf29d` | 未改发布流水线；门禁自证表写入 docs/CI.md §4.3 |
+| 2026-11-06 | 阶段 3 | GitHub CI 实跑验证：lint + 5 个测试矩阵 job 全绿 | run `42154283481` | 新增 lint step 在 CI 真实执行；三平台测试通过 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
