@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已完成（2026-11-06），阶段 4 待开始。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 2 个重构步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -435,6 +435,18 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | P4-B7 | 更新与发布链路（update/scripts/packaging/.github） | L | 增量 CI + 测试 | 发布流水线结构不变；更新器信任边界测试全绿；`docs/CI.md` 变更历史更新 |
 | P4-9 | 每批回滚演练 | L + H | 进度日志 | 每批至少一次 `git revert` 演练或在分支上验证可回滚；记录 commit 范围 |
 
+**阶段 4 进度（B1，2026-11-06）**
+
+- **步骤 1（CLI 文案下沉）** `f7b8a79`：新增 `command_text.py`；app / diagnostics / ipc /
+  hotkeys / ui 不再 import `cli`。**18 模块强连通分量消失**（结构测试只剩 update 两个模块），
+  `ARCHITECTURE.md` 例外表 5 → 1，`cli.py` 768 → 622 行。CI run
+  [42155164787](https://github.com/likangjie110/eye-tracker/actions/runs/42155164787) 全绿。
+- **步骤 2（away-action 策略下沉）** `b910510a`：`effective_away_action` / `DISRUPTIVE_AWAY_ACTIONS`
+  移入纯逻辑 `engine/presence.py`，UI 不再依赖 controller；补 2 个策略测试。CI run
+  [42155431560](https://github.com/likangjie110/eye-tracker/actions/runs/42155431560) 全绿。
+- 剩余 B1：`controller.py` 按职责抽取（相机/会话生命周期等，需先补特征测试），
+  `app.py` / `ipc.py` 的窗口与单实例职责整理。作为下一轮继续。
+
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
 
@@ -515,4 +527,6 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 3 | 统一本地门禁入口 `scripts/check.py`（11 门禁，--quick/--list/--fail-fast） | `48de2eb` | 本地与 CI 同序；4 个一致性测试 |
 | 2026-11-06 | 阶段 3 | CI 增量（配置文档 + 大小门禁两个 blocking step）、pre-commit 本地钩子、AGENTS/CONTRIBUTING/CI.md 同步 | `62bf29d` | 未改发布流水线；门禁自证表写入 docs/CI.md §4.3 |
 | 2026-11-06 | 阶段 3 | GitHub CI 实跑验证：lint + 5 个测试矩阵 job 全绿 | run `42154283481` | 新增 lint step 在 CI 真实执行；三平台测试通过 |
+| 2026-11-06 | 阶段 4 · B1 | 步骤 1：`command_text.py` 承接 CLI 文案，app/cli 环消失，结构测试环基线收缩 | `f7b8a79` | 行为不变：仅 import 路径与文件归属变化；产物字符串逐字节一致（test_cli 未改断言）；CI run `42155164787` 绿 |
+| 2026-11-06 | 阶段 4 · B1 | 步骤 2：`effective_away_action` 移入 `engine/presence.py`，UI 不再依赖 controller；补 2 个纯策略测试 | `b910510a` | 行为不变；CI run `42155431560` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
