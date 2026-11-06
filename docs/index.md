@@ -54,6 +54,6 @@ Every document in this repository, with its status and audience. Status means:
 
 ## How to keep this file honest
 
-`tests/test_docs.py` checks that every Markdown page under `docs/` is listed here, that relative
-links resolve, and that the required entry files exist. Adding a document without updating this
-index fails the test suite.
+`tests/test_docs.py` checks that every top-level Markdown page under `docs/` is listed here,
+that relative links resolve, and that the required entry files exist. Adding a page without
+updating this index fails the test suite.
