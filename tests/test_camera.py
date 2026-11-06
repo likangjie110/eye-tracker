@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -736,3 +737,25 @@ def test_v4l2_select_timeout_is_shortened() -> None:
     import os
 
     assert os.environ.get("OPENCV_VIDEOIO_V4L_SELECT_TIMEOUT") is not None
+
+
+def test_ffmpeg_capture_is_restricted_to_local_protocols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TD-SEC-012: a local playlist/container must not make FFmpeg open a URL."""
+    monkeypatch.delenv(camera_mod._FFMPEG_OPTIONS, raising=False)
+    camera_mod._restrict_ffmpeg_protocols()
+    assert "protocol_whitelist;file,crypto,data" in os.environ[camera_mod._FFMPEG_OPTIONS]
+
+
+def test_ffmpeg_protocol_restriction_keeps_user_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(camera_mod._FFMPEG_OPTIONS, "rtsp_transport;tcp")
+    camera_mod._restrict_ffmpeg_protocols()
+    value = os.environ[camera_mod._FFMPEG_OPTIONS]
+    assert value.startswith("rtsp_transport;tcp|")
+    assert "protocol_whitelist;file,crypto,data" in value
+
+    camera_mod._restrict_ffmpeg_protocols()  # idempotent
+    assert os.environ[camera_mod._FFMPEG_OPTIONS] == value

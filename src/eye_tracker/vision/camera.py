@@ -90,6 +90,20 @@ _API_BY_NAME: dict[str, int] = {
 # catches nested URLs.
 _URL_LIKE = re.compile(r"^(?:[A-Za-z0-9+.\-]{2,}:|subfile,)|://", re.IGNORECASE)
 
+#: OpenCV's FFmpeg backend reads this environment variable when a capture opens.
+_FFMPEG_OPTIONS = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
+#: Keep FFmpeg on local protocols: a local playlist/container must not pull a URL.
+_FFMPEG_PROTOCOLS = "protocol_whitelist;file,crypto,data"
+
+
+def _restrict_ffmpeg_protocols() -> None:
+    """Append FFmpeg's file-only protocol whitelist to the capture options (TD-SEC-012)."""
+    current = os.environ.get(_FFMPEG_OPTIONS, "")
+    if "protocol_whitelist" in current:
+        return
+    os.environ[_FFMPEG_OPTIONS] = f"{current}|{_FFMPEG_PROTOCOLS}" if current else _FFMPEG_PROTOCOLS
+
+
 if sys.platform.startswith("linux"):
     # V4L2 waits up to 10 s (the default) for each frame of a stalled camera,
     # during which the worker cannot release it. OpenCV reads this on the first
@@ -449,8 +463,9 @@ class FileSource(FrameSource):
 
     # --------------------------------------------------------------- helpers
     def _open_capture(self) -> cv2.VideoCapture | None:
+        _restrict_ffmpeg_protocols()
         try:
-            # FFmpeg only: its protocol whitelist keeps a local file from
+            # FFmpeg only: the whitelist above keeps a local file from
             # referencing network data (see the module docs).
             cap = cv2.VideoCapture(str(self.path), cv2.CAP_FFMPEG)
         except cv2.error as exc:
