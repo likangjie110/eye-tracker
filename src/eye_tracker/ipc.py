@@ -48,7 +48,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from . import paths
-from .ipc_runtime import _private_temp_dir
+from .ipc_runtime import _private_temp_dir, allow_foreground_handoff
 
 __all__ = [
     "COMMANDS",
@@ -168,8 +168,7 @@ def send_command(
     request = (text + "\n").encode("utf-8")
     deadline = time.monotonic() + max(0, wait_ms) / 1000.0
     while True:
-        _allow_foreground_handoff()
-        connected, data = _exchange(server_name(), request, timeout_ms)
+        connected, data = _exchange(server_name(), request, timeout_ms, handoff=True)
         if connected:
             break
         remaining_ms = int((deadline - time.monotonic()) * 1000)
@@ -191,25 +190,10 @@ def _pause(ms: int) -> None:
     loop.exec(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
 
-def _allow_foreground_handoff() -> None:
-    """Let the running instance bring a window to the front (Windows).
-
-    Windows only lets the process the user is interacting with take the
-    foreground. The client (a terminal running ``ctl``, or a second launch from
-    the Start menu) is that process, so it passes the right on; otherwise
-    "show"/"settings" would only flash the taskbar button.
-    """
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.AllowSetForegroundWindow.argtypes = [ctypes.c_uint32]
-        user32.AllowSetForegroundWindow.restype = ctypes.c_int
-        user32.AllowSetForegroundWindow(0xFFFFFFFF)  # ASFW_ANY
-    except Exception:
-        log.debug("AllowSetForegroundWindow failed", exc_info=True)
+def _allow_foreground_handoff(socket: Any) -> None:
+    """Pass the foreground right to the server process (Windows, TD-SEC-011)."""
+    if sys.platform == "win32":
+        allow_foreground_handoff(socket, _win_security())
 
 
 def is_running(timeout_ms: int = PROBE_TIMEOUT_MS) -> bool:
@@ -622,15 +606,14 @@ def _ensure_core_app() -> None:
         _owned_app.append(QCoreApplication([program]))
 
 
-def _exchange(name: str, request: bytes | None, timeout_ms: int) -> tuple[bool, bytes]:
+def _exchange(
+    name: str, request: bytes | None, timeout_ms: int, *, handoff: bool = False
+) -> tuple[bool, bytes]:
     """Connect to ``name``; send ``request`` and read until a newline, close or timeout.
 
-    With ``request=None`` only the connection is tested. Returns
-    ``(connected, data)``.
-
-    A local event loop is used instead of the blocking ``waitFor*`` calls: those
-    hold the GIL while waiting, and they cannot reach a server living in the
-    same thread (tests, or a probe made by the process that is about to listen).
+    ``request=None`` only tests the connection; returns ``(connected, data)``.
+    A local event loop is used instead of blocking ``waitFor*`` calls, which hold
+    the GIL and cannot reach a server living in the same thread.
     """
     _ensure_core_app()
     socket = QLocalSocket()
@@ -646,7 +629,6 @@ def _exchange(name: str, request: bytes | None, timeout_ms: int) -> tuple[bool, 
             loop.quit()
 
     def drain() -> None:
-        # Reading a socket that never connected makes Qt warn "device not open".
         if socket.isOpen() and not state["rejected"]:
             buffer.extend(socket.readAll().data())
 
@@ -661,6 +643,8 @@ def _exchange(name: str, request: bytes | None, timeout_ms: int) -> tuple[bool, 
         if request is None:
             finish()
             return
+        if handoff:
+            _allow_foreground_handoff(socket)
         socket.write(request)
         socket.flush()
 

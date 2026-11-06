@@ -310,14 +310,89 @@ def test_server_name_ignores_the_runtime_dir_elsewhere(
     assert ipc.server_name() == ipc.paths.ipc_name()
 
 
-def test_send_command_hands_over_the_foreground_right(
+def test_send_command_hands_over_only_after_connecting(
     qapp: Any, app_dirs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every request lets the running instance raise its window (Windows focus rules)."""
+    """No connection means no foreground right is passed to anyone (TD-SEC-011)."""
     calls: list[int] = []
-    monkeypatch.setattr(ipc, "_allow_foreground_handoff", lambda: calls.append(1))
+    monkeypatch.setattr(ipc, "_allow_foreground_handoff", lambda socket: calls.append(1))
     assert ipc.send_command("status", timeout_ms=200) is None  # nothing is listening
-    assert calls == [1]
+    assert calls == []
+
+
+def test_foreground_handoff_targets_the_server_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The handoff grants the right to the pipe's server PID, never ASFW_ANY."""
+    import ctypes
+    from ctypes import wintypes
+
+    allowed: list[int] = []
+
+    class Fn:
+        argtypes: Any = ()
+        restype: object = None
+
+        def __call__(self, pid: int) -> bool:
+            allowed.append(pid)
+            return True
+
+    class User32:
+        AllowSetForegroundWindow = Fn()
+
+    class Security:
+        @staticmethod
+        def server_pid(handle: object, pid: Any) -> bool:
+            ctypes.cast(pid, ctypes.POINTER(wintypes.ULONG)).contents.value = 4242
+            return True
+
+    class Socket:
+        def socketDescriptor(self) -> int:
+            return 1
+
+    def fake_windll(*_args: object, **_kwargs: object) -> User32:
+        return User32()
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(ipc, "_win_security", Security)
+    monkeypatch.setattr(ctypes, "WinDLL", fake_windll, raising=False)
+    ipc._allow_foreground_handoff(Socket())
+    assert allowed == [4242]
+
+
+def test_foreground_handoff_does_nothing_when_the_pid_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ctypes
+
+    allowed: list[int] = []
+
+    class Fn:
+        argtypes: Any = ()
+        restype: object = None
+
+        def __call__(self, pid: int) -> bool:
+            allowed.append(pid)
+            return True
+
+    class User32:
+        AllowSetForegroundWindow = Fn()
+
+    class Security:
+        @staticmethod
+        def server_pid(handle: object, pid: Any) -> bool:
+            return False
+
+    class Socket:
+        def socketDescriptor(self) -> int:
+            return 1
+
+    def fake_windll(*_args: object, **_kwargs: object) -> User32:
+        return User32()
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(ipc, "_win_security", Security)
+    monkeypatch.setattr(ctypes, "WinDLL", fake_windll, raising=False)
+    ipc._allow_foreground_handoff(Socket())
+    assert allowed == []
 
 
 # ------------------------------------------------------------------ instance lock

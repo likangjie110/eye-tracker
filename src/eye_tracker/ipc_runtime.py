@@ -43,3 +43,25 @@ def _private_temp_dir() -> str | None:
         log.warning("Not using %s for the instance socket: it is not a private directory", path)
         return None
     return path
+
+
+def allow_foreground_handoff(socket: object, api: object) -> None:
+    """Let the pipe's server process (and only it) take the foreground (TD-SEC-011)."""
+    import ctypes
+    from ctypes import wintypes
+
+    if api is None:
+        return
+    try:
+        handle = int(socket.socketDescriptor())  # type: ignore[attr-defined]
+        if handle <= 0:
+            return
+        pid = wintypes.ULONG(0)
+        if not api.server_pid(wintypes.HANDLE(handle), ctypes.byref(pid)) or pid.value == 0:  # type: ignore[attr-defined]
+            return
+        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+        user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+        user32.AllowSetForegroundWindow.restype = wintypes.BOOL
+        user32.AllowSetForegroundWindow(pid.value)
+    except Exception:
+        log.debug("AllowSetForegroundWindow failed", exc_info=True)
