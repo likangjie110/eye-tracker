@@ -10,6 +10,10 @@ of GitHub's "get the latest release" API (``gh api repos/OWNER/REPO/releases/lat
 Without it, or when an asset is missing, links fall back to the releases page so
 the site is always deployable. Images are copied from the repository's assets/
 folder, which stays the single source.
+
+``--out`` is emptied before it is written. So that a typo cannot delete a user
+folder, only a folder that is new, empty, or named like a build output (``dist``,
+``_site`` or ``site``) is emptied (TD-SEC-014); anything else is refused.
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ SITE = ROOT / "site"
 REPO_URL = "https://github.com/bugraskl/eye-tracker"
 SITE_URL = "https://bugraskl.github.io/eye-tracker/"
 RELEASES_URL = f"{REPO_URL}/releases/latest"
+
+#: Folder names that may be emptied and rebuilt; any other folder must be new or empty.
+BUILD_OUTPUT_NAMES = frozenset({"dist", "_site", "site"})
 
 #: Placeholder prefix → regular expression for the release asset's file name.
 ASSETS: dict[str, str] = {
@@ -102,8 +109,33 @@ def page_language(path: Path) -> str:
     return "tr" if path.relative_to(SITE).parts[0] == "tr" else "en"
 
 
+def _check_output_dir(out: Path) -> None:
+    """Refuse to empty a folder that is not clearly a build output (TD-SEC-014).
+
+    A typo such as ``--out ~/Documents`` must not delete a user folder, so only a
+    new folder, an empty folder, or one named like a build output is accepted --
+    and never the repository itself or the site sources.
+    """
+    if out.is_symlink():
+        raise SystemExit(f"build_site: refusing --out {out}: it is a symbolic link")
+    if not out.exists():
+        return  # build() creates it
+    if not out.is_dir():
+        raise SystemExit(f"build_site: refusing --out {out}: not a directory")
+    resolved = out.resolve()
+    if resolved in (SITE, ROOT) or resolved in ROOT.parents:
+        raise SystemExit(f"build_site: refusing --out {out}: it contains the repository")
+    if resolved.name not in BUILD_OUTPUT_NAMES and any(out.iterdir()):
+        names = "/".join(sorted(BUILD_OUTPUT_NAMES))
+        raise SystemExit(
+            f"build_site: refusing to delete {out}: it is not empty and not named "
+            f"{names}; delete it yourself or choose a new --out folder"
+        )
+
+
 def build(release: dict[str, Any], out: Path) -> list[Path]:
     """Write the site into ``out`` (emptied first) and return the pages written."""
+    _check_output_dir(out)
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -151,7 +183,12 @@ def _write_icons(folder: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--release", type=Path, help="JSON of the latest GitHub release")
-    parser.add_argument("--out", type=Path, default=ROOT / "_site", help="output folder")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=ROOT / "_site",
+        help="output folder (new, empty, or named dist/_site/site)",
+    )
     args = parser.parse_args(argv)
     release: dict[str, Any] = {}
     if args.release and args.release.is_file():

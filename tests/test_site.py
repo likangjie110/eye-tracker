@@ -157,3 +157,57 @@ def test_human_size(site: ModuleType, size: int, text: str) -> None:
 def test_unknown_placeholder_is_an_error(site: ModuleType) -> None:
     with pytest.raises(SystemExit):
         site.render("{{NOPE}}", {}, Path("x.html"))
+
+
+# ---------------------------------------------------------------- output safety
+def test_refuses_to_empty_a_user_folder(site: ModuleType, tmp_path: Path) -> None:
+    """TD-SEC-014: a typo in --out must not delete a user folder."""
+    user = tmp_path / "Documents"
+    user.mkdir()
+    (user / "thesis.txt").write_text("keep me", encoding="utf-8")
+    with pytest.raises(SystemExit, match="refusing to delete"):
+        site.build({}, user)
+    assert (user / "thesis.txt").read_text(encoding="utf-8") == "keep me"
+
+
+def test_empties_a_new_empty_or_build_named_folder(site: ModuleType, tmp_path: Path) -> None:
+    empty = tmp_path / "empty-folder"
+    empty.mkdir()
+    site.build({}, empty)  # an empty folder has nothing to lose
+    assert (empty / "index.html").is_file()
+
+    out = tmp_path / "_site"
+    out.mkdir()
+    (out / "stale.html").write_text("old", encoding="utf-8")
+    site.build({}, out)  # a build output may be rebuilt in place
+    assert not (out / "stale.html").exists()
+    assert (out / "index.html").is_file()
+
+
+def test_refuses_the_repository_and_the_site_sources(site: ModuleType) -> None:
+    for target in (site.ROOT, site.SITE):
+        with pytest.raises(SystemExit, match="refusing"):
+            site.build({}, target)
+
+
+_GITHUB_REPO_LINK = re.compile(
+    r"https://github\.com/bugraskl/eye-tracker/(?:blob|tree)/main/([^\"#?]+)"
+)
+
+
+def _missing_github_targets(text: str) -> list[str]:
+    """Repository paths behind absolute GitHub links in a site page."""
+    return [path for path in _GITHUB_REPO_LINK.findall(text) if not (ROOT / path).exists()]
+
+
+@pytest.mark.parametrize("page", ["site/index.html", "site/tr/index.html"])
+def test_absolute_github_links_point_at_repo_files(page: str) -> None:
+    """The pages link to docs with absolute blob/main URLs; a docs move must not break them."""
+    text = (ROOT / page).read_text(encoding="utf-8")
+    assert _missing_github_targets(text) == []
+
+
+def test_github_link_check_detects_a_moved_file() -> None:
+    assert _missing_github_targets(
+        "https://github.com/bugraskl/eye-tracker/blob/main/docs/nope.md"
+    ) == ["docs/nope.md"]
