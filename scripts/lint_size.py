@@ -51,6 +51,7 @@ class Entry:
     lines: int
     allowed: int | None = None
     kind: str = ""
+    moved_from: str | None = None
 
     @property
     def violation(self) -> bool:
@@ -116,6 +117,28 @@ def load_baseline(path: Path = BASELINE) -> Snapshot | None:
     )
 
 
+def _moved_allowance(
+    kind: str, key: str, lines: int, allowed: dict[str, int], current: dict[str, int]
+) -> tuple[int, str] | None:
+    """A baseline entry of the same function/class name that disappeared from the tree.
+
+    Splitting a module moves oversized units to a new path; that must not count as new debt.
+    The qualname after ``::`` is the stable identity. Exactly one vanished entry with enough
+    room is required, so an ambiguous match stays a violation.
+    """
+    if kind == "file":
+        return None
+    name = key.split("::", 1)[1]
+    candidates = [
+        (key_old, old_lines)
+        for key_old, old_lines in allowed.items()
+        if key_old not in current and key_old.split("::", 1)[1] == name and old_lines >= lines
+    ]
+    if len(candidates) != 1:
+        return None
+    return candidates[0][1], candidates[0][0]
+
+
 def check(snapshot: Snapshot, baseline: Snapshot) -> Report:
     report = Report()
     groups = (
@@ -128,7 +151,14 @@ def check(snapshot: Snapshot, baseline: Snapshot) -> Report:
             if lines <= threshold:
                 continue
             allowed_lines = allowed.get(key)
-            entry = Entry(key=key, lines=lines, allowed=allowed_lines, kind=kind)
+            moved_from = None
+            if allowed_lines is None:
+                moved = _moved_allowance(kind, key, lines, allowed, current)
+                if moved is not None:
+                    allowed_lines, moved_from = moved
+            entry = Entry(
+                key=key, lines=lines, allowed=allowed_lines, kind=kind, moved_from=moved_from
+            )
             if entry.violation:
                 report.violations.append(entry)
             elif allowed_lines is not None and lines < allowed_lines:
@@ -155,6 +185,8 @@ def write_baseline(snapshot: Snapshot, *, force: bool, path: Path = BASELINE) ->
             if lines <= threshold:
                 continue
             if key not in old:
+                if _moved_allowance(kind, key, lines, old, current) is not None:
+                    continue
                 additions.append(f"{kind} {key} ({lines} lines)")
             elif lines > old[key]:
                 additions.append(f"{kind} {key} grew {old[key]} -> {lines}")

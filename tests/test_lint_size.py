@@ -89,3 +89,23 @@ def test_missing_baseline_is_a_failure(tmp_path: Path) -> None:
         lint.main(["--check", "--source", str(source), "--baseline", str(tmp_path / "no.json")])
         == 1
     )
+
+
+def test_a_moved_function_keeps_its_baseline_allowance(tmp_path: Path) -> None:
+    lint = _load()
+    source = _tree(tmp_path, 70)
+    key = f"{source / 'module.py'}::big"
+    baseline = lint.Snapshot(functions={"/old/place.py::big": 75})
+    assert lint.check(lint.collect(source), baseline).violations == []
+    # Writing the baseline then transfers the entry to the new path, not adding debt.
+    out = tmp_path / "baseline.json"
+    assert lint.write_baseline(lint.collect(source), force=False, path=out) == []
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert list(written["functions"]) == [key]
+
+
+def test_an_ambiguous_move_still_fails(tmp_path: Path) -> None:
+    lint = _load()
+    source = _tree(tmp_path, 70)
+    baseline = lint.Snapshot(functions={"/a.py::big": 75, "/b.py::big": 75})
+    assert lint.check(lint.collect(source), baseline).violations[0].key.endswith("::big")
