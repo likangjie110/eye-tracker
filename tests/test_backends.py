@@ -119,7 +119,8 @@ def test_auto_falls_back_to_lite(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FaceMeshBackend, "__init__", broken)
     instance = create_backend("auto", max_faces=2)
     try:
-        assert isinstance(instance, LiteBackend)
+        assert type(instance) is LiteBackend
+        assert instance.name == "lite"
     finally:
         instance.close()
 

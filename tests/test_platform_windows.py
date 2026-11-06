@@ -350,15 +350,19 @@ class TestGetPlatform:
         first = platform_pkg.get_platform()
         assert platform_pkg.get_platform() is first
         assert isinstance(first, PlatformServices)
+        assert first.name
 
     @windows_only
     def test_windows_gets_windows_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(platform_pkg, "_cache", {})
-        assert isinstance(platform_pkg.get_platform(), WindowsPlatform)
+        assert type(platform_pkg.get_platform()) is WindowsPlatform
+        assert platform_pkg.get_platform().name == "windows"
 
     def test_create_windows_does_not_touch_win32(self) -> None:
         # Construction is lazy, so this works on every OS.
-        assert isinstance(platform_pkg._create("win32"), WindowsPlatform)
+        created = platform_pkg._create("win32")
+        assert type(created) is WindowsPlatform
+        assert created.name == "windows"
 
     def test_unknown_os_falls_back_to_base(self) -> None:
         assert type(platform_pkg._create("plan9")) is PlatformServices

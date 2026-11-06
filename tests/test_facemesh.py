@@ -410,7 +410,8 @@ def test_landmark_self_test_rejects_wrong_values(monkeypatch: pytest.MonkeyPatch
 
 def test_landmark_self_test_passes() -> None:
     net = load_landmark_net(paths.model_path(fm.MODEL_FILE))
-    fm._check_landmark_net(net)
+    assert net.getLayerNames()
+    fm._check_landmark_net(net)  # raises BackendUnavailable on a wrong-output runtime
 
 
 def test_landmark_model_from_a_non_ascii_path(tmp_path: Path) -> None:

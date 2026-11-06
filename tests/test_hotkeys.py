@@ -348,14 +348,15 @@ def test_base_manager_is_a_safe_no_op() -> None:
 def test_factory_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
     manager = create_hotkey_manager()  # constructing starts nothing
-    assert isinstance(manager, WindowsHotkeyManager)
-    assert manager.supported
+    assert type(manager) is WindowsHotkeyManager
+    assert manager.supported is True
 
 
 def test_factory_macos(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin")
     manager = create_hotkey_manager()  # Carbon is loaded lazily
-    assert isinstance(manager, MacHotkeyManager)
+    assert type(manager) is MacHotkeyManager
+    assert manager.name == "carbon"
 
 
 def test_factory_wayland_without_display_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -904,7 +905,7 @@ def test_call_timeout_returns_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_dispatch_ignores_unknown_ids(loopback: LoopbackManager) -> None:
-    loopback._dispatch(12345)  # must not raise
+    assert loopback._dispatch(12345) is None  # unknown id is ignored
 
 
 # ============================================================================== macOS

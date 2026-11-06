@@ -243,6 +243,7 @@ def test_a_clock_set_back_does_not_block_checks(
     service.set_auto(True)
     service._tick()
     wait_for(qapp, lambda: service.state.phase is Phase.AVAILABLE)
+    assert service.state.phase is Phase.AVAILABLE
 
 
 def test_a_manual_check_does_not_announce(qapp: Any, make: Callable[..., UpdateService]) -> None:
