@@ -521,8 +521,12 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
   `calibration_widgets.py`（327：`_Bar`/`_Spinner`/`_Card`/布局 helper）/
   `calibration_surface.py`（371：每屏全屏 surface）。窗口继续再导出测试用名字，断言不变。CI run
   [42165503750](https://github.com/likangjie110/eye-tracker/actions/runs/42165503750) 全绿。
+- **步骤 3（wizard 拆分）** `d07e618`：`ui/wizard.py` 999 → 572 行；页面控件与格式化 helper、
+  提示常量移入 `ui/wizard_pages.py`（465 行）；wizard 再导出 `frame_to_image` /
+  `CAMERA_PRIVACY_HELP` / `PRESENCE_CHOICES`，公共入口不变；测试仅把私有 `_finish_subtitle`
+  指向新模块。CI run [42166148422](https://github.com/likangjie110/eye-tracker/actions/runs/42166148422) 全绿。
 - 剩余 B3：`SettingsDialog` 类本身仍约 1,350 行（按页签拆子组件/presenter，TD-CPLX-002）；
-  `CalibrationWindow` 类约 850 行；`ui/tray.py`（702）、`ui/wizard.py`（998）待拆。
+  `CalibrationWindow` 类约 850 行；`ui/tray.py`（702）待拆；补 UI 测试密度。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
@@ -617,4 +621,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B2 | 步骤 6：macos 拆为 `macos_api`（439）+ `macos_platform`（835）+ 11 行 facade；B2 完成 | `f47bcc4` | 行为不变（断言未改；共享 helper 双模块 patch）；CI run `42163198344` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 1：settings_dialog 拆出 settings_status（220）+ hotkey_edit（342），facade 2029→1520；测试 seam 更新 | `5d14754` | 行为不变（公共导出与测试入口不变）；CI run `42164517742` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 2：calibration_window 拆出 model（196）/widgets（327）/surface（371），facade 1767→997；类本身待拆 | `365cf22` | 行为不变（测试未改）；CI run `42165503750` 绿 |
+| 2026-11-06 | 阶段 4 · B3 | 步骤 3：wizard 拆出 wizard_pages（465），wizard 999→572；公共再导出保持 | `d07e618` | 行为不变（仅私有 helper 的测试引用改指新模块）；CI run `42166148422` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
