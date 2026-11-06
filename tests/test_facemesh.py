@@ -22,6 +22,7 @@ from eye_tracker import paths
 from eye_tracker.types import Observation
 from eye_tracker.vision.backends import BackendUnavailable
 from eye_tracker.vision.backends import facemesh_backend as fm
+from eye_tracker.vision.backends import facemesh_landmarks as fm_landmarks
 from eye_tracker.vision.backends import facemesh_model as fm_model
 from eye_tracker.vision.backends.face_geometry import FaceGeometry, load_face_geometry
 from eye_tracker.vision.backends.facemesh_backend import (
@@ -860,7 +861,10 @@ def _misjudging_yunet(monkeypatch: pytest.MonkeyPatch, degrees: float) -> Callab
         seed = roi_from_detection(face)
         return Roi(seed.cx, seed.cy, seed.side, seed.angle + degrees)
 
+    # The seed comes from the backend's _acquire and, for a tracked face, from
+    # the mixin's _primary_candidate: patch both bindings.
     monkeypatch.setattr(fm, "roi_from_detection", misjudged)
+    monkeypatch.setattr(fm_landmarks, "roi_from_detection", misjudged)
     return misjudged
 
 
