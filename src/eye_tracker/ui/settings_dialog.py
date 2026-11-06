@@ -15,9 +15,7 @@ Tooltips come from the field documentation in :func:`eye_tracker.config.describe
 
 from __future__ import annotations
 
-import html
 import logging
-import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -30,8 +28,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
-    QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -41,9 +37,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
-    QSizePolicy,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,7 +45,7 @@ from PySide6.QtWidgets import (
 from .. import APP_NAME, paths
 from ..command_text import cli_command_text
 from ..config import Settings
-from ..update.fetch import supported as update_supported
+from ..update.fetch import supported as update_supported  # noqa: F401 - re-exported seam
 from .hotkey_edit import (
     HotkeyEdit,
     _Binding,
@@ -59,12 +53,29 @@ from .hotkey_edit import (
     modifier_preview,
 )
 from .icons import app_icon
+from .settings_builders import (
+    BACKEND_LABELS,
+    _build_camera_capture,
+    _build_camera_device,
+    _build_camera_live,
+    _build_camera_performance,
+    _build_general_advanced,
+    _build_general_calibration,
+    _build_general_startup,
+    _build_general_updates,
+    _build_hotkeys_editors,
+    _build_hotkeys_notes,
+    _build_presence_privacy,
+    _build_presence_walk_away,
+    _build_switching_advanced,
+    _build_switching_controls,
+    _build_switching_options,
+)
 from .settings_pages import (
     HOTKEY_ACTIONS,
     AutostartSyncMixin,
     CameraSyncMixin,
     HotkeySyncMixin,
-    _doc,
 )
 from .settings_status import (
     CameraProbe,
@@ -76,7 +87,7 @@ from .settings_status import (
     probe_cameras,
     settings_from_controller,
 )
-from .util import ACCENT, DANGER, WARNING, ui_scale
+from .util import ACCENT, DANGER, ui_scale
 
 log = logging.getLogger(__name__)
 
@@ -97,22 +108,7 @@ __all__ = [
 ]
 
 
-#: Vision backends offered in the settings (``general.backend`` values), best first.
-BACKEND_LABELS: dict[str, str] = {
-    "auto": "Automatic (recommended)",
-    "facemesh": "Face mesh — head pose + eye direction (most accurate)",
-    "lite": "Lite — head pose from face geometry only (lightest)",
-}
-
-
 # ============================================================ controller access
-
-
-def _hotkey_writer(edit: HotkeyEdit) -> Callable[[Any], None]:
-    def write(value: Any) -> None:
-        edit.set_hotkey(str(value or ""))
-
-    return write
 
 
 def _get(settings: Settings, key: str) -> Any:
@@ -125,7 +121,6 @@ def _set(settings: Settings, key: str, value: Any) -> None:
     setattr(getattr(settings, section), name, value)
 
 
-# ======================================================================= the dialog
 class SettingsDialog(
     HotkeySyncMixin,
     CameraSyncMixin,
@@ -163,6 +158,16 @@ class SettingsDialog(
         ("hotkeys", "Hotkeys", "Global shortcuts that work in every application."),
         ("diagnostics", "Diagnostics", "System report for bug reports and troubleshooting."),
     )
+
+    # Widgets created by the module-level page builders below (declared so those builders
+    # can assign them and the methods above can read them).
+    _nav: QListWidget
+    _stack: QStackedWidget
+    _defaults_button: QPushButton
+    _status: QLabel
+    _buttons: QDialogButtonBox
+    _calibration_status: QLabel
+    _action_note: QLabel
 
     def __init__(self, controller: object, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -300,525 +305,40 @@ class SettingsDialog(
     # ============================================================== building
     def _build(self) -> None:
         s = self._scale
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
-        root.addLayout(body, 1)
-
-        self._nav = QListWidget()
-        self._nav.setObjectName("settingsNav")
-        self._nav.setFrameShape(QFrame.Shape.NoFrame)
-        self._nav.setFixedWidth(int(200 * s))
-        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._nav.setStyleSheet(
-            f"""
-            QListWidget#settingsNav {{
-                padding: {int(10 * s)}px {int(8 * s)}px;
-                background: palette(alternate-base);
-                outline: 0;
-            }}
-            QListWidget#settingsNav::item {{
-                padding: {int(8 * s)}px {int(10 * s)}px;
-                margin: {int(1 * s)}px 0;
-                border-radius: {int(6 * s)}px;
-            }}
-            QListWidget#settingsNav::item:hover:!selected {{
-                background: rgba(127, 127, 127, 0.10);
-            }}
-            QListWidget#settingsNav::item:selected {{
-                background: rgba(99, 102, 241, 0.18);
-                color: palette(text);
-                border-left: {max(2, int(3 * s))}px solid {ACCENT};
-            }}
-            """
-        )
-        body.addWidget(self._nav)
-
-        self._stack = QStackedWidget()
-        body.addWidget(self._stack, 1)
-
-        builders: dict[str, Callable[[QVBoxLayout], None]] = {
-            "general": self._build_general,
-            "switching": self._build_switching,
-            "presence": self._build_presence,
-            "camera": self._build_camera,
-            "hotkeys": self._build_hotkeys,
-            "diagnostics": self._build_diagnostics,
-        }
-        for key, title, subtitle in self.PAGES:
-            page, layout = self._page(title, subtitle)
-            builders[key](layout)
-            layout.addStretch(1)
-            self._pages[key] = self._stack.addWidget(page)
-            self._nav.addItem(QListWidgetItem(title))
-        self._nav.currentRowChanged.connect(self._on_page_changed)
-
-        # Footer: status line + buttons.
-        footer = QFrame()
-        footer.setFrameShape(QFrame.Shape.NoFrame)
-        foot = QHBoxLayout(footer)
-        foot.setContentsMargins(int(16 * s), int(10 * s), int(16 * s), int(14 * s))
-        self._defaults_button = QPushButton("Restore defaults")
-        self._defaults_button.setToolTip("Show the default value of every setting (Apply to keep).")
-        self._defaults_button.clicked.connect(self.restore_defaults)
-        foot.addWidget(self._defaults_button)
-        self._status = QLabel()
-        self._status.setWordWrap(True)
-        foot.addWidget(self._status, 1)
-        self._buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-            | QDialogButtonBox.StandardButton.Apply
-        )
-        self._buttons.accepted.connect(self.accept)
-        self._buttons.rejected.connect(self.reject)
-        self._buttons.clicked.connect(self._on_button)
-        foot.addWidget(self._buttons)
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Sunken)
-        root.addWidget(line)
-        root.addWidget(footer)
+        root, body = _build_dialog_layout(self)
+        self._nav = _build_dialog_navigation(self, body, s)
+        self._stack, self._pages = _build_dialog_pages(self, body, self._nav)
+        self._defaults_button, self._status, self._buttons = _build_dialog_footer(self, root, s)
 
     # -------------------------------------------------------------- pages
     def _build_general(self, layout: QVBoxLayout) -> None:
-        form = self._group(layout, "Startup")
-        self._autostart = QCheckBox(f"Start {APP_NAME} when I log in")
-        supported = self._autostart_supported()
-        self._autostart.setEnabled(supported)
-        self._autostart.setToolTip(
-            "Runs quietly in the tray after you log in."
-            if supported
-            else "Start at login is not supported on this system."
-        )
-        self._autostart.toggled.connect(self._on_changed)
-        form.addRow(self._autostart)
-        self._autostart_note = self._hint("")
-        self._autostart_note.setVisible(False)
-        form.addRow(self._autostart_note)
-        self._check(form, "general.start_paused", "Start with tracking paused")
-        # Opens the assistant now. A "show it at next start" switch would have
-        # to clear general.first_run_done, and until the assistant is finished
-        # that flag also turns the walk-away lock into a mere notification.
-        setup = QPushButton("Run setup assistant…")
-        setup.setToolTip(
-            "Check the camera and choose what happens when you walk away, step by step. "
-            "Cancelling it changes nothing."
-        )
-        setup.clicked.connect(self.setup_requested)
-        form.addRow(setup)
-
-        form = self._group(layout, "Interface")
-        self._check(form, "general.notifications", "Show notifications")
-        self._check(form, "ui.show_gaze_overlay", "Show a dot where I am looking (testing aid)")
-
-        form = self._group(layout, "Updates")
-        updates = self._check(form, "updates.check", "Look for a new version once a day")
-        supported = update_supported()
-        updates.setEnabled(supported)
-        form.addRow(
-            self._hint(
-                "Off by default: then the app never uses the network. It only tells you "
-                "when there is a new version and installs it when you agree. "
-                "“Check for updates…” in the tray menu works either way."
-                if supported
-                else "Checking for updates is not available on this system yet: nothing uses "
-                "the network. Take new versions from the releases page."
-            )
-        )
-
-        form = self._group(layout, "Calibration")
-        row = QWidget()
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        self._calibration_status = QLabel()
-        self._calibration_status.setWordWrap(True)
-        lay.addWidget(self._calibration_status, 1)
-        recalibrate = QPushButton("Recalibrate…")
-        recalibrate.setToolTip("Run the calibration again (about 30 seconds).")
-        recalibrate.clicked.connect(self.calibration_requested)
-        lay.addWidget(recalibrate)
-        form.addRow(row)
-
-        form = self._group(layout, "Advanced")
-        available = self._available_backends()
-        options = []
-        for value, label in BACKEND_LABELS.items():
-            missing = available is not None and value != "auto" and value not in available
-            options.append((value, f"{label} — not available" if missing else label))
-        self._combo(form, "general.backend", "Vision backend", options)
-        form.addRow(
-            self._hint(
-                "Face mesh follows your head and your eyes; Lite follows only the head, "
-                "for slow computers. Changing the backend requires a new calibration."
-            )
-        )
-        self._combo(
-            form,
-            "general.log_level",
-            "Log level",
-            [("DEBUG", "Debug"), ("INFO", "Info"), ("WARNING", "Warning"), ("ERROR", "Error")],
-        )
+        self._autostart, self._autostart_note = _build_general_startup(self, layout)
+        _build_general_updates(self, layout)
+        self._calibration_status = _build_general_calibration(self, layout)
+        _build_general_advanced(self, layout)
 
     def _build_switching(self, layout: QVBoxLayout) -> None:
-        form = self._group(layout, "Switching")
-        enabled = self._check(form, "switching.enabled", "Move the cursor to the monitor I look at")
-        target = self._combo(
-            form,
-            "switching.cursor_target",
-            "Cursor lands",
-            [
-                ("last", "Where it was last on that monitor"),
-                ("center", "In the centre of the monitor"),
-                ("gaze", "Where I am looking (estimated)"),
-            ],
-        )
-        focus = self._check(
-            form, "switching.focus_window", "Also give keyboard focus to that monitor"
-        )
-        if not self._caps.get("focus", True):
-            focus.setText(focus.text() + " (not supported on this system)")
-
-        timing = self._group(layout, "Timing")
-        dwell = self._int(timing, "switching.dwell_ms", "Look for at least", suffix=" ms", step=50)
-        cooldown = self._int(
-            timing, "switching.cooldown_ms", "Pause between switches", suffix=" ms", step=100
-        )
-        mouse = self._int(
-            timing, "switching.mouse_grace_ms", "Wait after mouse use", suffix=" ms", step=250
-        )
-        typing = self._int(
-            timing, "switching.typing_grace_ms", "Wait after typing", suffix=" ms", step=250
-        )
-        reading = self._int(
-            timing,
-            "switching.reading_grace_ms",
-            "… while reading another monitor",
-            suffix=" ms",
-            step=500,
-        )
-
-        tuning = self._group(layout, "Sensitivity")
-        smoothing = self._slider(
-            tuning, "switching.smoothing", "Smoothing", left="Responsive", right="Steady"
-        )
-        hysteresis = self._float(
-            tuning,
-            "switching.hysteresis",
-            "Cross into a monitor by",
-            factor=100.0,
-            decimals=0,
-            step=1.0,
-            suffix=" % of its size",
-        )
-        margin = self._float(
-            tuning,
-            "switching.off_screen_margin",
-            "Ignore gaze beyond",
-            factor=100.0,
-            decimals=0,
-            step=5.0,
-            suffix=" % of the diagonal",
-        )
-        self._depends(
-            enabled,
-            [target, focus, dwell, cooldown, mouse, typing, reading, smoothing, hysteresis, margin],
-        )
-
-        panes = self._group(layout, "Split panes (experimental)")
-        follow = self._check(
-            panes, "panes.enabled", "Also move keyboard focus to the split pane I look at"
-        )
-        if not self._caps.get("panes", True):
-            follow.setText(follow.text() + " (not supported on this system)")
-        move = self._check(
-            panes, "panes.move_cursor", "Also move the cursor into that pane, where I left it"
-        )
-        precision = self._float(
-            panes,
-            "panes.precision",
-            "Only panes at least",
-            decimals=1,
-            step=0.5,
-            suffix=" × my gaze error",
-        )
-        panes.addRow(
-            self._hint(
-                "Works with tmux, WezTerm and Windows Terminal panes on the monitor you are on. "
-                "Small panes are left alone: how small depends on how accurate your calibration "
-                "is."
-            )
-        )
-        desktop = self._check(
-            panes,
-            "panes.desktop_apps",
-            "Also switch between side-by-side sessions in the Claude and ChatGPT apps",
-        )
-        desktop_hint = self._hint(
-            "Two Claude chats, or a ChatGPT or Codex conversation and its side chat: the one you "
-            "look at gets the focus in its message box. Windows only. Asks the app for its "
-            "accessibility tree, which can cost the app some CPU and memory."
-        )
-        panes.addRow(desktop_hint)
-        self._depends(follow, [move, precision, desktop, desktop_hint])
-
-        learn = self._group(layout, "Adaptive accuracy")
-        adaptive = self._check(learn, "learning.adaptive", "Learn from how I use the mouse")
-        max_samples = self._int(
-            learn, "learning.max_samples", "Keep at most", suffix=" samples", step=50
-        )
-        self._depends(adaptive, [max_samples])
-        self._check(learn, "learning.drift_alerts", "Suggest recalibrating when accuracy drops")
+        enabled, target, focus = _build_switching_options(self, layout)
+        controls = _build_switching_controls(self, layout)
+        self._depends(enabled, [target, focus, *controls])
+        _build_switching_advanced(self, layout)
 
     def _build_presence(self, layout: QVBoxLayout) -> None:
-        layout.addWidget(
-            self._banner(
-                "<b>Everything stays on this computer.</b> Camera frames are analysed in "
-                "memory and never saved or sent anywhere. Privacy mode turns the camera off "
-                "completely."
-            )
-        )
-        form = self._group(layout, "When I walk away")
-        enabled = self._check(form, "presence.enabled", "React when I leave the computer")
-        action = self._combo(
-            form,
-            "presence.action",
-            "Then",
-            [
-                ("lock", "Lock the computer"),
-                ("lock_and_display_off", "Lock and turn the displays off"),
-                ("display_off", "Turn the displays off"),
-                ("notify", "Only show a notification"),
-                ("none", "Do nothing"),
-            ],
-        )
-        self._action_note = self._hint("")
-        self._action_note.setVisible(False)
-        form.addRow(self._action_note)
-        action.currentIndexChanged.connect(self._update_action_note)
-        timeout = self._int(form, "presence.away_timeout_s", "After", suffix=" s away", step=5)
-        warning = self._int(form, "presence.warning_s", "Countdown", suffix=" s", step=1)
-        idle = self._check(
-            form, "presence.require_input_idle", "Keyboard or mouse use counts as being here"
-        )
-        if not self._caps.get("input_idle", True):
-            # Wayland outside GNOME: only the camera can cancel the countdown.
-            idle.setText(idle.text() + " (not supported on this system)")
-        wake = self._check(
-            form, "presence.wake_on_return", "Turn the displays back on when I return"
-        )
-        self._depends(enabled, [action, timeout, warning, idle, wake])
-
-        form = self._group(layout, "Camera privacy")
-        self._check(
-            form,
-            "privacy.remember_privacy_mode",
-            "Keep privacy mode on after a restart (the camera stays off)",
-        )
-        self._check(
-            form, "privacy.pause_when_locked", "Release the camera while the screen is locked"
-        )
-        yield_box = self._check(
-            form, "privacy.yield_camera", "Release the camera while another app uses it"
-        )
-        if not self._caps.get("camera_in_use", True):
-            yield_box.setText(yield_box.text() + " (not supported on this system)")
-        self._lines(
-            form,
-            "privacy.pause_for_apps",
-            "Pause while these apps run",
-            "One program per line, e.g.\nzoom.exe\nobs64.exe",
-        )
-
-        form = self._group(layout, "Shoulder guard")
-        guard = self._check(
-            form, "privacy.shoulder_guard", "React when someone looks over my shoulder"
-        )
-        guard_action = self._combo(
-            form,
-            "privacy.guard_action",
-            "Then",
-            [
-                ("curtain", "Cover the screens"),
-                ("notify", "Only show a notification"),
-                ("lock", "Lock the computer"),
-            ],
-        )
-        delay = self._float(
-            form, "privacy.guard_delay_s", "After", decimals=1, step=0.5, suffix=" s"
-        )
-        self._depends(guard, [guard_action, delay])
+        self._action_note = _build_presence_walk_away(self, layout)
+        _build_presence_privacy(self, layout)
 
     def _build_camera(self, layout: QVBoxLayout) -> None:
-        form = self._group(layout, "Camera")
-        self._device = QComboBox()
-        self._device.setEditable(True)
-        self._device.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._device.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        device_line = self._device.lineEdit()
-        if device_line is not None:
-            device_line.setPlaceholderText("Camera number or a video file")
-
-        def read_device() -> str:
-            return self._device_value()
-
-        def write_device(value: Any) -> None:
-            self._select_device(str(value))
-
-        self._register(
-            _Binding("camera.device", self._device, read_device, write_device, read_device),
-            self._device.currentTextChanged,
-        )
-        device_row = QWidget()
-        lay = QHBoxLayout(device_row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self._device, 1)
-        self._detect_button = QPushButton("Detect cameras")
-        self._detect_button.setToolTip("Look for connected cameras (each may briefly turn on).")
-        self._detect_button.clicked.connect(self.detect_cameras)
-        lay.addWidget(self._detect_button)
-        browse = QToolButton()
-        browse.setText("…")
-        browse.setToolTip("Use a video or image file instead of a camera (for testing).")
-        browse.clicked.connect(self._browse_video)
-        lay.addWidget(browse)
-        form.addRow(self._row_label("Device", _doc("camera.device")), device_row)
-
-        size_row = QWidget()
-        lay = QHBoxLayout(size_row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        width = self._int(None, "camera.width", "", suffix=" px", step=160)
-        height = self._int(None, "camera.height", "", suffix=" px", step=120)
-        lay.addWidget(width, 1)
-        lay.addWidget(QLabel("×"))
-        lay.addWidget(height, 1)
-        form.addRow(self._row_label("Resolution", "Requested capture size."), size_row)
-        form.addRow(self._hint("640 × 480 is plenty: frames are scaled down before analysis."))
-        self._combo(
-            form,
-            "camera.api",
-            "Capture API",
-            [
-                ("auto", "Automatic"),
-                ("dshow", "DirectShow (Windows)"),
-                ("msmf", "Media Foundation (Windows)"),
-                ("avfoundation", "AVFoundation (macOS)"),
-                ("v4l2", "Video4Linux2 (Linux)"),
-                ("any", "Any available"),
-            ],
-        )
-        self._camera_note = self._hint("")
-        self._camera_note.setVisible(False)
-        form.addRow(self._camera_note)
-
-        form = self._group(layout, "Performance")
-        options = []
-        profile_text = {
-            "eco": "Eco — lowest CPU",
-            "balanced": "Balanced (recommended)",
-            "responsive": "Responsive — fastest switching",
-        }
-        try:
-            from ..engine.scheduler import PROFILES
-        except Exception:  # pragma: no cover - engine is part of the package
-            PROFILES = {}
-        for value in ("eco", "balanced", "responsive"):
-            text = profile_text[value]
-            fps = PROFILES.get(value, {}).get("active")
-            if fps:
-                text += f", up to {fps:g} fps"
-            options.append((value, text))
-        self._combo(form, "performance.profile", "Profile", options)
-        gate = self._check(
-            form, "performance.motion_gate", "Skip analysis while the picture is still"
-        )
-        threshold = self._float(
-            form, "performance.motion_threshold", "Motion threshold", decimals=1, step=0.5
-        )
-        self._depends(gate, [threshold])
-
-        form = self._group(layout, "Live")
-        self._stats_label = QLabel("Waiting for statistics…")
-        self._stats_label.setWordWrap(True)
-        self._stats_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        form.addRow(self._stats_label)
-        self._backend_label = self._hint("")
-        form.addRow(self._backend_label)
+        form, self._device, self._detect_button = _build_camera_device(self, layout)
+        self._camera_note = _build_camera_capture(self, form)
+        _build_camera_performance(self, layout)
+        self._stats_label, self._backend_label = _build_camera_live(self, layout)
         self._refresh_backend_label()
 
     def _build_hotkeys(self, layout: QVBoxLayout) -> None:
-        form = self._group(layout, "Global shortcuts")
-        enabled = self._check(form, "hotkeys.enabled", "Enable global shortcuts")
-        edits: list[QWidget] = []
-        for action, label in HOTKEY_ACTIONS:
-            key = f"hotkeys.{action}"
-            edit = HotkeyEdit()
-            edit.setToolTip(f"{_doc(key)}\nClick, then press the shortcut. Backspace clears it.")
-            edit.recording_changed.connect(self._on_hotkey_recording)
-            self._hotkey_edits[action] = edit
-            self._register(
-                _Binding(key, edit, edit.hotkey, _hotkey_writer(edit), edit.hotkey),
-                edit.hotkey_changed,
-            )
-            clear = QToolButton()
-            clear.setText("Clear")
-            clear.setToolTip("Remove this shortcut.")
-            clear.clicked.connect(lambda _=False, e=edit: e.set_hotkey(""))
-            row = QWidget()
-            lay = QHBoxLayout(row)
-            lay.setContentsMargins(0, 0, 0, 0)
-            lay.addWidget(edit, 1)
-            lay.addWidget(clear)
-            form.addRow(self._row_label(label, _doc(key)), row)
-            edits.append(row)
-        self._hotkey_error = QLabel()
-        self._hotkey_error.setWordWrap(True)
-        self._hotkey_error.setStyleSheet(f"color: {DANGER};")
-        self._hotkey_error.setVisible(False)
-        form.addRow(self._hotkey_error)
-        # Valid shortcuts the OS will refuse (they type a character, e.g. AltGr).
-        self._hotkey_warning = QLabel()
-        self._hotkey_warning.setWordWrap(True)
-        self._hotkey_warning.setStyleSheet(f"color: {WARNING};")
-        self._hotkey_warning.setVisible(False)
-        form.addRow(self._hotkey_warning)
-        self._depends(enabled, edits)
-
-        tip = (
-            "Shortcuts need at least one of Ctrl, Alt or "
-            + ("Cmd" if sys.platform == "darwin" else "Win" if sys.platform == "win32" else "Super")
-            + ". Shift alone only works with function keys."
+        form, enabled, edits = _build_hotkeys_editors(self, layout)
+        self._hotkey_error, self._hotkey_warning = _build_hotkeys_notes(
+            self, layout, form, enabled, edits, cli_command_text
         )
-        form.addRow(self._hint(tip))
-        # The controller's manager knows best (e.g. XWayland limits); before it
-        # exists fall back to the platform's capability matrix.
-        manager = getattr(self._controller, "hotkey_manager", None)
-        supported = bool(getattr(manager, "supported", self._caps.get("hotkeys", True)))
-        note = getattr(manager, "note", None)
-        note = note if isinstance(note, str) and note.strip() else None
-        if not supported:
-            note = note or "Global shortcuts are not available in this desktop session."
-            text = html.escape(note)
-            # Named as this copy is run (the .AppImage file, eye-tracker-cli, …):
-            # the packages put no "eye-tracker" command on the PATH, and a
-            # desktop shortcut bound to a missing command fails silently. Added
-            # unless the note already names the commands that way.
-            if cli_command_text("ctl") not in note:
-                commands = " · ".join(
-                    f"<code>{html.escape(cli_command_text('ctl', action))}</code>"
-                    for action in ("toggle", "privacy-toggle", "calibrate")
-                )
-                text += (
-                    "<br>Bind these commands in your desktop's keyboard settings instead: "
-                    + commands
-                )
-            layout.addWidget(self._banner(text))
-        elif note:
-            layout.addWidget(self._banner(html.escape(note)))
 
     def _build_diagnostics(self, layout: QVBoxLayout) -> None:
         self._diagnostics = QPlainTextEdit()
@@ -1011,3 +531,109 @@ class SettingsDialog(
             return
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
             self._set_status(f"Logs are in {folder}", None)
+
+
+# ---------------------------------------------------------------- page builders
+# The bodies of the page builders above live here so the class stays small; the thin
+# methods on SettingsDialog create the widgets in the same order and assign them.
+
+
+def _build_dialog_layout(dialog: SettingsDialog) -> tuple[QVBoxLayout, QHBoxLayout]:
+    root = QVBoxLayout(dialog)
+    root.setContentsMargins(0, 0, 0, 0)
+    root.setSpacing(0)
+
+    body = QHBoxLayout()
+    body.setContentsMargins(0, 0, 0, 0)
+    body.setSpacing(0)
+    root.addLayout(body, 1)
+    return root, body
+
+
+def _build_dialog_navigation(dialog: SettingsDialog, body: QHBoxLayout, s: float) -> QListWidget:
+    nav = QListWidget()
+    nav.setObjectName("settingsNav")
+    nav.setFrameShape(QFrame.Shape.NoFrame)
+    nav.setFixedWidth(int(200 * s))
+    nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    nav.setStyleSheet(
+        f"""
+            QListWidget#settingsNav {{
+                padding: {int(10 * s)}px {int(8 * s)}px;
+                background: palette(alternate-base);
+                outline: 0;
+            }}
+            QListWidget#settingsNav::item {{
+                padding: {int(8 * s)}px {int(10 * s)}px;
+                margin: {int(1 * s)}px 0;
+                border-radius: {int(6 * s)}px;
+            }}
+            QListWidget#settingsNav::item:hover:!selected {{
+                background: rgba(127, 127, 127, 0.10);
+            }}
+            QListWidget#settingsNav::item:selected {{
+                background: rgba(99, 102, 241, 0.18);
+                color: palette(text);
+                border-left: {max(2, int(3 * s))}px solid {ACCENT};
+            }}
+            """
+    )
+    body.addWidget(nav)
+    return nav
+
+
+def _build_dialog_pages(
+    dialog: SettingsDialog, body: QHBoxLayout, nav: QListWidget
+) -> tuple[QStackedWidget, dict[str, int]]:
+    stack = QStackedWidget()
+    body.addWidget(stack, 1)
+
+    pages: dict[str, int] = {}
+    builders: dict[str, Callable[[QVBoxLayout], None]] = {
+        "general": dialog._build_general,
+        "switching": dialog._build_switching,
+        "presence": dialog._build_presence,
+        "camera": dialog._build_camera,
+        "hotkeys": dialog._build_hotkeys,
+        "diagnostics": dialog._build_diagnostics,
+    }
+    for key, title, subtitle in dialog.PAGES:
+        page, layout = dialog._page(title, subtitle)
+        builders[key](layout)
+        layout.addStretch(1)
+        pages[key] = stack.addWidget(page)
+        nav.addItem(QListWidgetItem(title))
+    nav.currentRowChanged.connect(dialog._on_page_changed)
+    return stack, pages
+
+
+def _build_dialog_footer(
+    dialog: SettingsDialog, root: QVBoxLayout, s: float
+) -> tuple[QPushButton, QLabel, QDialogButtonBox]:
+    # Footer: status line + buttons.
+    footer = QFrame()
+    footer.setFrameShape(QFrame.Shape.NoFrame)
+    foot = QHBoxLayout(footer)
+    foot.setContentsMargins(int(16 * s), int(10 * s), int(16 * s), int(14 * s))
+    defaults_button = QPushButton("Restore defaults")
+    defaults_button.setToolTip("Show the default value of every setting (Apply to keep).")
+    defaults_button.clicked.connect(dialog.restore_defaults)
+    foot.addWidget(defaults_button)
+    status = QLabel()
+    status.setWordWrap(True)
+    foot.addWidget(status, 1)
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok
+        | QDialogButtonBox.StandardButton.Cancel
+        | QDialogButtonBox.StandardButton.Apply
+    )
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    buttons.clicked.connect(dialog._on_button)
+    foot.addWidget(buttons)
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.HLine)
+    line.setFrameShadow(QFrame.Shadow.Sunken)
+    root.addWidget(line)
+    root.addWidget(footer)
+    return defaults_button, status, buttons
