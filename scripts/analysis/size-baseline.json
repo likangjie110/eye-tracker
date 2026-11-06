@@ -23,7 +23,7 @@
     "src/eye_tracker/platform/win_uia.py": 750,
     "src/eye_tracker/platform/windows_api.py": 839,
     "src/eye_tracker/ui/calibration_window.py": 1766,
-    "src/eye_tracker/ui/settings_dialog.py": 2029,
+    "src/eye_tracker/ui/settings_dialog.py": 1520,
     "src/eye_tracker/ui/tray.py": 702,
     "src/eye_tracker/ui/wizard.py": 998,
     "src/eye_tracker/vision/backends/facemesh_backend.py": 1454,

@@ -40,6 +40,7 @@ from eye_tracker.platform.base import PlatformServices
 from eye_tracker.types import Monitor, Observation, Rect, TrackingState, layout_signature
 from eye_tracker.ui import calibration_window as cw
 from eye_tracker.ui import settings_dialog as sd
+from eye_tracker.ui import settings_status
 from eye_tracker.ui import wizard as wz
 from eye_tracker.ui.calibration_window import CalibrationWindow
 from eye_tracker.ui.settings_dialog import SettingsDialog, format_stats, hotkey_text_from_event
@@ -208,6 +209,7 @@ def probes(monkeypatch: pytest.MonkeyPatch) -> list[frozenset[int]]:
         return [CameraInfo(0, "Integrated Camera", 640, 480), CameraInfo(2, "USB Cam", 1280, 720)]
 
     monkeypatch.setattr(sd, "probe_cameras", probe)
+    monkeypatch.setattr(settings_status, "probe_cameras", probe)
     monkeypatch.setattr(
         sd, "load_diagnostics_text", lambda controller=None: "FAKE DIAGNOSTICS REPORT"
     )
@@ -724,7 +726,9 @@ def test_unsupported_hotkeys_explain_the_ctl_alternative(controller: FakeControl
     try:
         texts = " ".join(label.text() for label in dlg.findChildren(QLabel))
         assert "Wayland session" in texts
-        assert html.escape(sd.cli_command_text("ctl", "toggle")) in texts
+        from eye_tracker.command_text import cli_command_text
+
+        assert html.escape(cli_command_text("ctl", "toggle")) in texts
     finally:
         _dispose(dlg)
 
@@ -1619,7 +1623,7 @@ def test_the_camera_in_use_stays_selectable_after_detection(
     dialog: SettingsDialog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        sd,
+        settings_status,
         "probe_cameras",
         lambda max_index=4, api="auto", skip=(): [CameraInfo(2, "USB Cam", 1280, 720)],
     )

@@ -63,7 +63,7 @@ ALLOWED: dict[str, set[str]] = {
 
 #: Documented exceptions from ARCHITECTURE.md. Each maps to the tracker entry that removes it.
 EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("eye_tracker.ui.settings_dialog", "eye_tracker.diagnostics"): "TD-ARCH-002",
+    ("eye_tracker.ui.settings_status", "eye_tracker.diagnostics"): "TD-ARCH-002",
 }
 
 #: Module-level cycles that exist today (frozen). New cycles fail; shrinking is allowed.
