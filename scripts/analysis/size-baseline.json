@@ -25,7 +25,6 @@
     "src/eye_tracker/ui/calibration_window.py": 997,
     "src/eye_tracker/ui/settings_dialog.py": 1520,
     "src/eye_tracker/ui/tray.py": 702,
-    "src/eye_tracker/ui/wizard.py": 998,
     "src/eye_tracker/vision/backends/facemesh_backend.py": 1454,
     "src/eye_tracker/vision/camera.py": 708,
     "src/eye_tracker/vision/worker.py": 776

@@ -40,7 +40,7 @@ from eye_tracker.platform.base import PlatformServices
 from eye_tracker.types import Monitor, Observation, Rect, TrackingState, layout_signature
 from eye_tracker.ui import calibration_window as cw
 from eye_tracker.ui import settings_dialog as sd
-from eye_tracker.ui import settings_status
+from eye_tracker.ui import settings_status, wizard_pages
 from eye_tracker.ui import wizard as wz
 from eye_tracker.ui.calibration_window import CalibrationWindow
 from eye_tracker.ui.settings_dialog import SettingsDialog, format_stats, hotkey_text_from_event
@@ -1254,11 +1254,11 @@ def test_wizard_finish_page_says_how_to_reach_the_tray_icon(
 ) -> None:
     """r3-ux-docs-04: on Windows 11 the icon starts in the hidden overflow area."""
     monkeypatch.setattr(sys, "platform", "win32")
-    assert "click ^ on the taskbar" in wz._finish_subtitle()
+    assert "click ^ on the taskbar" in wizard_pages._finish_subtitle()
     monkeypatch.setattr(sys, "platform", "linux")
-    assert "right-click the eye icon" in wz._finish_subtitle()
+    assert "right-click the eye icon" in wizard_pages._finish_subtitle()
     monkeypatch.setattr(sys, "platform", "darwin")
-    assert "menu bar" in wz._finish_subtitle()
+    assert "menu bar" in wizard_pages._finish_subtitle()
 
 
 def test_wizard_walk_away_off_and_no_calibration(
