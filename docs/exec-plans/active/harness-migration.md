@@ -4,10 +4,10 @@
 
 - 项目 / 仓库：`eye-tracker`（Python 桌面应用，MIT），本地 worktree
   `/Users/kukan/PycharmProjects/eye-tracker/.orca/worktrees/eye-tracker/lionfish`
-- 上游远程：`https://github.com/bugraskl/eye-tracker`
+- 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**待确认**（人工确认后才进入阶段 2；确认前不修改任何业务代码）
+- 状态：**已确认**（2026-11-06 人工确认；按推荐默认执行，决策结果见 §6.1）
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -458,6 +458,29 @@ Sigstore 校验，仅比对同一 release 里的 `SHA256SUMS.txt`，随后 `/VER
 | D16 | 隐私门禁范围与文案：是否把 `eval/exec`、`QDesktopServices.openUrl`、运行时拼接的 `getattr/__import__` 纳入规则；是否扫描会进 bundle 的 `scripts/`/`packaging/` 代码；文案改成“静态扫描 + bundle 扫描” | 门禁严格度与误报成本取舍 | 阶段 3 |
 | D17 | 依赖 CVE 与主版本策略：离线无法判定 OpenCV 5 / numpy 2.5 / Qt 6.11 的已知漏洞；是否给生产依赖加上界、是否把 `hatchling` 纳入锁定 | 升级灵活性与供应链安全的取舍 | B7 |
 
+
+### 6.1 决策结果（2026-11-06，人工确认：按推荐默认执行）
+
+| 编号 | 决策 | 执行方式 |
+|---|---|---|
+| D1 | 采用 pytest-cov；阈值 = 实测基线向下取整，之后只许升不许降（ratchet） | 阶段 5 落地；先出基线报告再设阈值 |
+| D2 | 引入 pre-commit 本地钩子，与 CI 共用工具版本 | 阶段 3 / B0 |
+| D3 | 根 `ARCHITECTURE.md` 做顶层地图；`docs/architecture.md` 保留为细节页 | 阶段 2 |
+| D4 | `controller.py` 采用“先补特征测试、再按职责逐步抽取”的分步方案，不做一次性重写 | B1 |
+| D5 | 新增的常驻文档（AGENTS/ARCHITECTURE/core-beliefs/QUALITY_SCORE）用**英文**；`docs/exec-plans/` 过程文档可用中文 | 阶段 2 起 |
+| D6 | 启用 `prompt-history.txt`：`.gitignore` 忽略、只追加不读取、不在仓库内引用 | 阶段 2 |
+| D7 | 性能以 `bench --json` 记录趋势（nightly/手动），暂不设硬阈值，避免环境噪声导致 flaky | 阶段 5 / B4 |
+| D8 | 平台范围保持现状：Windows x64、macOS 14+ arm64、Linux x86_64；Intel Mac 文档已写明从源码运行 | 不扩 CI |
+| D9 | `docs/configuration.md` 保持在公开文档路径，不迁入 `docs/generated/`；生成标记已存在 | 阶段 2 只加校验 |
+| D10 | 大小/复杂度门禁“冻结存量、只卡新增”，存量按基线豁免并只减不增 | 阶段 3 |
+| D11 | 发布前**强制跑测试矩阵**（新增 test 门禁）并校验 tag 指向 main 祖先；发布方式暂保持“tag 直接正式发布”，改动只做增量、不改变现有用户可见流程 | B7 |
+| D12 | GitHub Settings 侧配置（required checks / tag protection / 签名 secrets）由人工确认；本次先以“未配置”为最坏假设登记 | 阶段 1 已登记，B7 复核 |
+| D13 | 本次不做 CI 成本裁剪；docs-only 过滤与 bundle 触发策略留到 B7 评估 | B7 |
+| D14 | 更新器签名目标为 Windows Authenticode：先实现 WinVerifyTrust 校验与失败路径测试，证书就绪后设为发布必需；过渡期文档如实披露 | B7（需签名基建） |
+| D15 | 做 FFmpeg 本地容器远程 URL 复核实验（Linux 网络命名空间 / 受控环境），成立则限制容器格式并更新隐私文档 | B4 / 阶段 1 复核 |
+| D16 | 隐私门禁扩规则（eval/exec、openUrl/startfile URL、运行时拼接导入），扫描会进 bundle 的脚本，文案改为“静态扫描 + bundle 扫描” | 阶段 3 |
+| D17 | 生产依赖加保守主版本上界（OpenCV `<6`、PySide6 `<7`、numpy `<3` 等），锁定构建后端；CI 加 pip-audit/OSV（先 report-only） | B7 / 阶段 3 |
+
 ## 7. 进度与决策日志
 
 | 日期 | 阶段 | 动作 | 关联 commit | 决策与理由 |
@@ -466,4 +489,6 @@ Sigstore 校验，仅比对同一 release 里的 `SHA256SUMS.txt`，随后 `/VER
 | 2026-11-06 | 阶段 1 | 并行只读审计：CI/构建发布、测试与文档、安全与性能 | — | 子智能体只读，产出写入 `/tmp/harness-scan/`，由 L 汇总入台账；原始报告归档到 `docs/exec-plans/active/audits/` |
 | 2026-11-06 | 阶段 1 | 审计结论：CI 51 条（P1=发布不依赖测试）、测试/文档 29 条（P1=覆盖率/winhttp/文档门禁/零网络矛盾）、安全/可靠性 17 条（P1=更新器无签名校验） | — | 三份原始报告归档到 `docs/exec-plans/active/audits/`；按根因归并为台账 105 条（P0=0 / P1=21 / P2=84） |
 | 2026-11-06 | 阶段 1 | 决策项扩到 D17（发布门禁、GitHub Settings、CI 成本、更新器签名、FFmpeg 复核、隐私门禁范围、依赖 CVE） | — | 等 H 在确认计划时一并回答；未回答前阶段 3 不落 CI 变更 |
+| 2026-11-06 | 阶段 1 | **H 确认计划**，D1–D17 按推荐默认执行（结果见 §6.1） | — | 阶段 2 启动；仍不修改业务代码 |
+| 2026-11-06 | 阶段 1 | 远程仓库改为个人 fork：`origin = likangjie110/eye-tracker`，`upstream = bugraskl/eye-tracker`（`gh repo fork` 创建） | — | 后续推送目标为 fork；上游保留用于同步 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
