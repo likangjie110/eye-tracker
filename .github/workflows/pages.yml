@@ -39,24 +39,43 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.12"
+          enable-cache: true
 
-      - name: Install Pillow (favicons)
-        run: python -m pip install --disable-pip-version-check "pillow>=10.4"
+      - name: Install the locked build dependencies
+        run: uv sync --locked --group build --no-dev
 
       - name: Read the latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           # Before the first release the API answers 404; the site then links
-          # to the releases page instead of individual downloads.
-          gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > release.json || echo '{}' > release.json
+          # to the releases page instead of individual downloads. Anything else
+          # (auth, rate limit, 5xx) is retried once and then fails the build.
+          for attempt in 1 2; do
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > release.json 2> gh-error.txt; then
+              exit 0
+            fi
+            if grep -q "HTTP 404" gh-error.txt; then
+              echo "No release yet; the site will link to the releases page."
+              echo '{}' > release.json
+              exit 0
+            fi
+            echo "::warning::reading the latest release failed (attempt ${attempt})"
+            if [[ "${attempt}" == 2 ]]; then
+              cat gh-error.txt >&2
+              echo "::error::cannot read the latest release (not a 404)"
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Build
-        run: python scripts/build_site.py --release release.json --out _site
+        run: uv run --no-sync python scripts/build_site.py --release release.json --out _site
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

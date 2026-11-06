@@ -2719,3 +2719,20 @@ def test_spec_drops_the_links_to_what_it_leaves_out() -> None:
         assert line in source[dangling:]
     assert source.index("coll = COLLECT(") < source.index("require_intact_symlinks(coll.name)")
     assert source.index("app = BUNDLE(") < source.index("require_intact_symlinks(app.name)")
+
+
+def test_pages_workflow_distinguishes_no_release_from_api_errors() -> None:
+    """TD-CI-028: a 404 means "no release yet"; auth/rate-limit/5xx must fail and retry."""
+    pages = _workflow("pages.yml")
+    assert "|| echo '{}'" not in pages
+    assert "HTTP 404" in pages
+    assert "cannot read the latest release" in pages
+    assert "for attempt in 1 2" in pages
+
+
+def test_pages_workflow_installs_pillow_from_the_lock_file() -> None:
+    """TD-CI-027: the site build must not bypass uv.lock with an unpinned pip install."""
+    pages = _workflow("pages.yml")
+    assert "pip install" not in pages
+    assert "uv sync --locked --group build --no-dev" in pages
+    assert "uv run --no-sync python scripts/build_site.py" in pages
