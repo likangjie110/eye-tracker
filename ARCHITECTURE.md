@@ -21,7 +21,8 @@ Layer 0 — foundation (no project imports, or only other Layer 0 modules)
 Layer 1 — domain logic and adapters
   gaze/             gaze model, filters, calibration, calibration store, learning
   engine/           pure decision logic: decision, guard, presence, reading, scheduler,
-                    input_state, window_memory, camera_yield (plus the controller seams)
+                    input_state, window_memory, camera_yield, hotkey registration
+                    (hotkey_setup.py), plus the controller seams
   panes/            split-pane focus: decider (pure), worker, providers
   vision/           OpenCV adapter: camera, motion gate, face backends
   platform/         OS adapter: autostart, hotkeys, monitors, cursor, windows

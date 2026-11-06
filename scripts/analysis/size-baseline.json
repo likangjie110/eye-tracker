@@ -10,7 +10,7 @@
     "src/eye_tracker/cli.py": 622,
     "src/eye_tracker/config.py": 623,
     "src/eye_tracker/diagnostics.py": 1319,
-    "src/eye_tracker/engine/controller.py": 3165,
+    "src/eye_tracker/engine/controller.py": 3114,
     "src/eye_tracker/gaze/calibration.py": 670,
     "src/eye_tracker/gaze/model.py": 959,
     "src/eye_tracker/gaze/store.py": 731,
@@ -74,7 +74,7 @@
   },
   "classes": {
     "src/eye_tracker/app.py::EyeTrackerApp": 733,
-    "src/eye_tracker/engine/controller.py::Controller": 2845,
+    "src/eye_tracker/engine/controller.py::Controller": 2795,
     "src/eye_tracker/gaze/model.py::GazeModel": 339,
     "src/eye_tracker/platform/hotkeys.py::X11HotkeyManager": 408,
     "src/eye_tracker/platform/hotkeys.py::_Carbon": 301,

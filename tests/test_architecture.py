@@ -118,14 +118,42 @@ def _candidates(module: str, is_package: bool, node: ast.AST) -> list[str]:
     return [base, *(f"{base}.{alias.name}" for alias in node.names)]
 
 
+def _runtime_imports(tree: ast.AST) -> list[ast.Import | ast.ImportFrom]:
+    """Import nodes that execute at runtime; ``if TYPE_CHECKING:`` blocks are type-only."""
+    found: list[ast.Import | ast.ImportFrom] = []
+
+    def visit(node: ast.AST, *, type_only: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if (
+                isinstance(child, ast.If)
+                and isinstance(child.test, ast.Name)
+                and child.test.id == "TYPE_CHECKING"
+            ):
+                for branch in (child.body, child.orelse):
+                    visit_children(branch, type_only=True)
+                continue
+            if isinstance(child, ast.Import | ast.ImportFrom) and not type_only:
+                found.append(child)
+            visit(child, type_only=type_only)
+
+    def visit_children(nodes: list[ast.stmt], *, type_only: bool) -> None:
+        for node in nodes:
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                if not type_only:
+                    found.append(node)
+            else:
+                visit(node, type_only=type_only)
+
+    visit(tree, type_only=False)
+    return found
+
+
 def internal_edges(modules: dict[str, tuple[Path, str]]) -> set[tuple[str, str]]:
     known = set(modules)
     edges: set[tuple[str, str]] = set()
     for module, (path, source) in modules.items():
         tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Import | ast.ImportFrom):
-                continue
+        for node in _runtime_imports(tree):
             for candidate in _candidates(module, path.name == "__init__.py", node):
                 target = candidate
                 while target not in known and "." in target:
@@ -324,3 +352,16 @@ def test_synthetic_new_cycle_is_rejected() -> None:
 
 def test_synthetic_stale_exception_is_rejected() -> None:
     assert stale_exceptions(set()) == sorted(EXCEPTIONS)
+
+
+def test_type_checking_imports_are_not_runtime_dependencies() -> None:
+    modules = {
+        "eye_tracker.engine.thing": (
+            Path("engine/thing.py"),
+            "from typing import TYPE_CHECKING\n\n"
+            "if TYPE_CHECKING:\n"
+            "    from eye_tracker.ui import window\n",
+        ),
+        "eye_tracker.ui.window": (Path("ui/window.py"), "x = 1\n"),
+    }
+    assert internal_edges(modules) == set()

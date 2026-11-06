@@ -153,6 +153,7 @@ from .controller_support import (
 )
 from .decision import Decision, SwitchConfig, SwitchDecider
 from .guard import GuardConfig, ShoulderGuard
+from .hotkey_setup import HOTKEY_ACTIONS, hotkey_error, register_hotkeys
 from .input_state import InputTracker
 from .presence import (
     PresenceConfig,
@@ -297,8 +298,6 @@ COMMANDS = (
 #: Commands that only the UI can carry out; forwarded through ``ui_requested``.
 UI_COMMANDS = ("show", "settings", "quit")
 
-#: Hotkey setting names (``Settings.hotkeys.<name>``) in registration order.
-HOTKEY_ACTIONS = ("toggle_tracking", "toggle_privacy", "recalibrate")
 
 _CAMERA_OFF = frozenset(
     {TrackingState.PAUSED, TrackingState.PRIVACY, TrackingState.LOCKED, TrackingState.YIELDED}
@@ -1168,7 +1167,7 @@ class Controller(QObject):
         for name in configured:
             if name in registered:
                 continue
-            reason = self._hotkey_error(manager, name)
+            reason = hotkey_error(manager, name)
             if reason:
                 errors[name] = reason
         status: dict[str, Any] = {"registered": registered, "errors": errors}
@@ -2930,66 +2929,16 @@ class Controller(QObject):
 
     def _register_hotkeys(self) -> None:
         manager = self._hotkeys
-        if manager is None or self._hotkeys_suspended:
+        if manager is None:
             return
-        hk = self._settings.hotkeys
-        try:
-            manager.unregister_all()
-        except Exception:
-            log.debug("Releasing hotkeys failed", exc_info=True)
-        if not hk.enabled:
-            # Turning them on again announces every failure afresh.
-            self._announced_hotkey_failures.clear()
-            with contextlib.suppress(Exception):
-                manager.stop()
-            return
-        if not manager.supported:
-            if manager.note:
-                log.info("Global hotkeys unavailable: %s", manager.note)
-            return
-        failed: list[str] = []
-        failing: set[tuple[str, str]] = set()
-        for name in HOTKEY_ACTIONS:
-            combo = str(getattr(hk, name, "") or "").strip()
-            if not combo:
-                continue
-            try:
-                ok = manager.register(name, combo, functools.partial(self._on_hotkey, name))
-            except Exception:
-                log.warning("Registering hotkey %s failed", combo, exc_info=True)
-                ok = False
-            if ok:
-                continue
-            key = (name, combo.lower())
-            failing.add(key)
-            if key in self._announced_hotkey_failures:
-                log.debug("Hotkey %s for %s is still unavailable (already announced)", combo, name)
-                continue
-            reason = self._hotkey_error(manager, name)
-            failed.append(
-                reason or f"{combo} could not be registered (invalid, or used by another app)"
-            )
-        # Pairs that register now (or are no longer configured) are forgotten, so
-        # a combination that fails again later is announced again.
-        self._announced_hotkey_failures = failing
-        if failed:
-            self._notify(
-                "Hotkey unavailable",
-                "; ".join(failed) + ". Choose another in Settings → Hotkeys.",
-            )
-
-    @staticmethod
-    def _hotkey_error(manager: HotkeyManager, name: str) -> str | None:
-        """The manager's explanation of why ``name`` is not registered, if it has one."""
-        try:
-            reason = manager.last_error(name)
-        except Exception:
-            log.debug("Reading the hotkey error failed", exc_info=True)
-            return None
-        if not reason:
-            return None
-        # Joined into one sentence with the others; the caller adds the full stop.
-        return str(reason).strip().rstrip(".") or None
+        self._announced_hotkey_failures = register_hotkeys(
+            manager,
+            self._settings,
+            self._announced_hotkey_failures,
+            suspended=self._hotkeys_suspended,
+            on_hotkey=self._on_hotkey,
+            notify=self._notify,
+        )
 
     def _on_hotkey(self, name: str) -> None:  # hotkey thread (or the main thread on macOS)
         if self._closed:
