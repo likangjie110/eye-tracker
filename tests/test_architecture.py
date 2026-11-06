@@ -28,7 +28,10 @@ FOUNDATION = {
     "eye_tracker.logging_setup",
     "eye_tracker.trace",
 }
-CONTROLLER = {"eye_tracker.engine.controller"}
+CONTROLLER = {
+    "eye_tracker.engine.controller",
+    "eye_tracker.engine.controller_support",
+}
 COMPOSITION = {"eye_tracker.app", "eye_tracker.ipc", "eye_tracker.diagnostics"}
 ENTRY = {"eye_tracker.cli", "eye_tracker.__main__"}
 
@@ -72,7 +75,7 @@ PURE_MODULES = (
     "eye_tracker.gaze.",
     "eye_tracker.engine.",
 )
-PURE_EXCEPTIONS = {"eye_tracker.engine.controller"}
+PURE_EXCEPTIONS = {"eye_tracker.engine.controller", "eye_tracker.engine.controller_support"}
 
 QT_CV_ROOTS = {"PySide6", "cv2"}
 

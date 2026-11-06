@@ -10,7 +10,7 @@
     "src/eye_tracker/cli.py": 622,
     "src/eye_tracker/config.py": 623,
     "src/eye_tracker/diagnostics.py": 1319,
-    "src/eye_tracker/engine/controller.py": 3418,
+    "src/eye_tracker/engine/controller.py": 3165,
     "src/eye_tracker/gaze/calibration.py": 670,
     "src/eye_tracker/gaze/model.py": 959,
     "src/eye_tracker/gaze/store.py": 731,

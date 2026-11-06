@@ -21,14 +21,15 @@ Layer 0 — foundation (no project imports, or only other Layer 0 modules)
 Layer 1 — domain logic and adapters
   gaze/             gaze model, filters, calibration, calibration store, learning
   engine/           pure decision logic: decision, guard, presence, reading, scheduler,
-                    input_state, window_memory, camera_yield
+                    input_state, window_memory, camera_yield (plus the controller seams)
   panes/            split-pane focus: decider (pure), worker, providers
   vision/           OpenCV adapter: camera, motion gate, face backends
   platform/         OS adapter: autostart, hotkeys, monitors, cursor, windows
   update/           network adapter: the opt-in update check and installer
 
 Layer 2 — orchestration
-  engine/controller.py  owns the pipeline state and the Qt timers; the only Qt code in engine/
+  engine/controller.py         owns the pipeline state and the Qt timers
+  engine/controller_support.py the pointer/worker seams and vision factories the controller injects
   app.py                startup sequence, single instance, owns windows and the controller
   ipc.py                single-instance guard and local command channel
   diagnostics.py        doctor / bench aggregation
@@ -40,9 +41,9 @@ Entry points
   cli.py, __main__.py
 ```
 
-Package boundaries are historical as well as logical. `engine/controller.py` sits in `engine/`
-because it coordinates the engine, not because it is pure logic — `CONTRIBUTING.md` and the
-`engine/__init__.py` docstring say so explicitly.
+Package boundaries are historical as well as logical. `engine/controller.py` and its
+`controller_support.py` seams sit in `engine/` because they coordinate the engine, not because they
+are pure logic — `CONTRIBUTING.md` and the `engine/__init__.py` docstring say so explicitly.
 
 ## Allowed dependency direction
 
@@ -67,7 +68,7 @@ pull request which violates them.
 
 | Exception | Why it exists today | Tracker |
 |---|---|---|
-| `engine/controller.py` imports PySide6, `panes/`, `platform/`, `vision/` | it is the orchestrator, and `engine/` is where it grew | TD-CPLX-001, TD-ARCH-001 |
+| `engine/controller.py` and `controller_support.py` import PySide6, `panes/`, `platform/`, `vision/` | they are the orchestrator seams, and `engine/` is where they grew | TD-CPLX-001, TD-ARCH-001 |
 | `panes/decider.py` → `engine/reading.py` | reuse of a pure rule | TD-ARCH-001 |
 | `diagnostics.py` → `platform/hotkeys.py`, `engine/scheduler.py` | a diagnostic report deliberately aggregates every layer | TD-ARCH-002 |
 | `update/fetch.py` ↔ `update/winhttp.py` (lazy import) | transport protocol lives in `fetch.py` | TD-ARCH-006 |
