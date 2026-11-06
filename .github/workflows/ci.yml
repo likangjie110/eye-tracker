@@ -115,6 +115,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Inno Setup (Windows installer test)
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+
       - name: Install Qt runtime libraries
         if: runner.os == 'Linux'
         run: |

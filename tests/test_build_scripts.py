@@ -2732,6 +2732,13 @@ def test_spec_drops_the_links_to_what_it_leaves_out() -> None:
     assert source.index("app = BUNDLE(") < source.index("require_intact_symlinks(app.name)")
 
 
+def test_windows_ci_installs_inno_setup_for_the_installer_test() -> None:
+    """TD-TEST-003: the Windows matrix must not skip the installer compile test."""
+    test_job = _jobs(_workflow("ci.yml"))["test"]
+    assert "choco install innosetup" in test_job
+    assert "if: runner.os == 'Windows'" in test_job
+
+
 def test_pages_workflow_distinguishes_no_release_from_api_errors() -> None:
     """TD-CI-028: a 404 means "no release yet"; auth/rate-limit/5xx must fail and retry."""
     pages = _workflow("pages.yml")
