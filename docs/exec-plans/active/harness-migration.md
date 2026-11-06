@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06）；阶段 4 进行中（B1 5 步已完成，**B2 已完成**，B3 待开始）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06）；阶段 4 进行中（B1、B2 完成，B3 进行中）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -508,6 +508,17 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 剩余已登记：`LinuxPlatform` 类 ~950 行（TD-CPLX-014）、热键 base/mac/x11 仍 >600（TD-CPLX-013）、
 `MacPlatform`/`LinuxPlatform` 可按 X11/Wayland/AppKit 策略继续细分。
 
+**阶段 4 进度（B3，2026-11-06）**
+
+- **步骤 1（settings dialog 拆分）** `5d14754`：`ui/settings_dialog.py` 2,029 → 1,520 行；
+  拆出 `ui/settings_status.py`（220 行：controller/status 读取、相机探测、诊断文本）与
+  `ui/hotkey_edit.py`（342 行：快捷键录制控件、键鼠事件翻译、修饰键预览）。
+  settings_dialog 继续再导出这些名字，`__all__` 与测试导入入口不变；相机探测 patch 目标
+  改指持有绑定的模块，诊断 lazy import 随 helper 移动（架构例外同步）。CI run
+  [42164517742](https://github.com/likangjie110/eye-tracker/actions/runs/42164517742) 全绿。
+- 剩余 B3：`SettingsDialog` 类本身仍约 1,350 行（按页签拆子组件/presenter，TD-CPLX-002）；
+  `ui/calibration_window.py`（1,766）、`ui/tray.py`（702）、`ui/wizard.py`（998）待拆。
+
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
 
@@ -599,4 +610,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B2 | 步骤 4：windows 拆为 `windows_api`（839）+ `windows_platform`（536）+ 11 行 facade；测试 seam 更新 | `95e208d` | 行为不变（断言未改）；CI run `42161480869` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 5：linux 拆为 common/desktop/x11/dbus/camera，facade 2528→1100 行；测试 seam 按定义模块路由 | `5c6ccd5` | 行为不变（断言未改）；CI run `42162202129` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 6：macos 拆为 `macos_api`（439）+ `macos_platform`（835）+ 11 行 facade；B2 完成 | `f47bcc4` | 行为不变（断言未改；共享 helper 双模块 patch）；CI run `42163198344` 绿 |
+| 2026-11-06 | 阶段 4 · B3 | 步骤 1：settings_dialog 拆出 settings_status（220）+ hotkey_edit（342），facade 2029→1520；测试 seam 更新 | `5d14754` | 行为不变（公共导出与测试入口不变）；CI run `42164517742` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
