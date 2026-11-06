@@ -68,6 +68,12 @@ jobs:
       - name: Verify the bundled face models
         run: uv run --no-sync python scripts/fetch_models.py --check
 
+      - name: Configuration reference is up to date
+        run: uv run --no-sync python scripts/gen_config_docs.py --check
+
+      - name: Size gate (file / function / class limits)
+        run: uv run --no-sync python scripts/lint_size.py --check
+
       - name: Check packaging scripts
         run: |
           sudo apt-get update

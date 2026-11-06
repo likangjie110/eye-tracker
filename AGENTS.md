@@ -34,10 +34,13 @@ uv run mypy scripts packaging/pyinstaller/entry.py # scripts and the PyInstaller
 uv run python scripts/check_privacy.py             # no network code, no frames written
 uv run python scripts/fetch_models.py --check      # committed face models and licences
 uv run python scripts/gen_config_docs.py --check   # docs/configuration.md is up to date
+uv run python scripts/lint_size.py --check         # file/function/class size gate (frozen debt)
+uv run python scripts/check.py                     # all of the above + pytest, one command
 ```
 
-Run this list before opening a pull request; CI runs the same checks on three operating systems.
-Building installers is described in `docs/building.md`.
+Run this list (or `scripts/check.py`) before opening a pull request; CI runs the same checks on
+three operating systems. `scripts/check.py --quick` skips pytest. Building installers is described
+in `docs/building.md`.
 
 ## Repository map
 
@@ -106,6 +109,8 @@ assets/            README hero image and demo animation
   Linux-only paths and Inno Setup. Do not make the suite green by deleting them.
 - The MediaPipe *runtime* is intentionally not used (it contains a usage-logging uploader); the
   face models are run through OpenCV's DNN module. Do not reintroduce it.
-- There is no pre-commit hook yet (phase 3 of the migration); run the gates by hand until then.
+- Pre-commit hooks exist (`.pre-commit-config.yaml`, decision D2) but are optional until
+  installed: `uvx pre-commit install`. They run the fast subset (ruff, privacy, size, docs);
+  mypy and pytest stay in `scripts/check.py`/CI.
 - The harness migration is in progress: prefer following the active plan over inventing a new
   process, and record deviations in its decision log.

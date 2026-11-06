@@ -1,0 +1,42 @@
+# Local commit hooks for Eye Tracker.
+#
+# Install once with `uvx pre-commit install` (or `uvx pre-commit run --all-files` to try them).
+# Every hook is `language: system` and runs through `uv run --no-sync`, so it uses exactly the
+# environment and tool versions from uv.lock - no external hook repository is fetched and the
+# ruff version cannot drift between the hook and CI.
+#
+# The full gate list is `uv run python scripts/check.py`; these hooks are the fast subset that
+# catches the mistakes that are cheap to fix before a commit. mypy and pytest stay in CI/the full
+# runner because they are too slow for a per-file hook.
+minimum_pre_commit_version: "3.5.0"
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff lint (auto-fix)
+        entry: uv run --no-sync ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --no-sync ruff format
+        language: system
+        types: [python]
+      - id: privacy
+        name: privacy gate
+        entry: uv run --no-sync python scripts/check_privacy.py
+        language: system
+        pass_filenames: false
+        files: ^src/eye_tracker/
+      - id: size
+        name: size gate
+        entry: uv run --no-sync python scripts/lint_size.py --check
+        language: system
+        pass_filenames: false
+        files: \.py$
+      - id: docs
+        name: documentation gate
+        entry: uv run --no-sync python -m pytest tests/test_docs.py -q
+        language: system
+        pass_filenames: false
+        files: ^(docs/|AGENTS\.md|ARCHITECTURE\.md|README|README\.tr\.md|SECURITY\.md|CONTRIBUTING\.md|scripts/gen_config_docs\.py|src/eye_tracker/config\.py)

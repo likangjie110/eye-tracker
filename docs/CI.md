@@ -75,12 +75,15 @@ tag vX.Y.Z
 | 隐私检查 | `uv run python scripts/check_privacy.py` | ✅ 通过（76 files，仅允许 update/winhttp.py） |
 | 模型校验 | `uv run python scripts/fetch_models.py --check` | ✅ 通过（sha256 verified） |
 | 测试 | `uv run pytest -q` | ✅ 2952 passed / 55 skipped（35.59 s，2026-11-06 本机） |
-| 配置文档同步 | `uv run python scripts/gen_config_docs.py --check`（`tests/test_docs.py` 内） | ✅ 通过 |
+| 配置文档同步 | `uv run python scripts/gen_config_docs.py --check`（另有 `tests/test_docs.py`） | ✅ 通过（阶段 3 起 CI 独立 step） |
+| 大小门禁 | `uv run python scripts/lint_size.py --check` | ✅ 通过（存量冻结，基线 22 文件 / 41 函数 / 16 类） |
+| 结构测试 | `uv run python -m pytest tests/test_architecture.py -q` | ✅ 通过（9 用例，含负例） |
 | 打包脚本 lint | `shellcheck` + `desktop-file-validate`（CI 安装工具后跑） | ⚠️ 本机未验证（工具未安装，CONTRIBUTING 也未给命令） |
 | Windows 安装/升级/卸载冒烟 | —— | ❌ CI-only：`build.yml:303-425` 内联 PowerShell，无本地脚本 |
 | 发布校验 / attestation / 建 Release | —— | ❌ CI-only（设计使然，不可本地复现） |
-| 覆盖率 | —— | ❌ 无覆盖率工具、无覆盖率门禁 |
-| 本地提交钩子 | —— | ❌ 无 pre-commit / lefthook / husky，靠人工执行 |
+| 覆盖率 | —— | ❌ 无覆盖率工具、无覆盖率门禁（阶段 5） |
+| 本地提交钩子 | `uvx pre-commit install` 后自动运行快子集 | ✅ 配置已就位（`.pre-commit-config.yaml`，可选安装） |
+| 一键本地门禁 | `uv run python scripts/check.py`（`--quick` 跳过 pytest） | ✅ 与 CI 同序 |
 
 > 说明：`ci.yml` 的 `lint` job 只跑在 ubuntu-24.04；平台专属类型检查通过
 > `mypy --platform win32/darwin` 在同一 job 内覆盖，属已有优势。
@@ -110,14 +113,66 @@ tag vX.Y.Z
 用户在阶段 3 不需要回答“是否生成 GitHub CI / 目标平台 / Release 发布方式”三问。
 现有打包发布流水线**保留现状**，阶段 3 只做审计与门禁加强，不重建、不删除。
 
-## 4. 落地说明（阶段 3 填写）
+## 4. 落地说明（阶段 3）
 
-- 现状：见 §2，阶段 1 不改任何 workflow。
-- 阶段 3 计划：在现有 `ci.yml` 上增量增加覆盖率/结构检查等门禁（不新建打包流水线），
-  具体差异与验证方式届时写入本节，并记录变更历史。
+### 4.1 门禁清单（CI ↔ 本地 ↔ 是否 blocking）
+
+| 检查 | CI 位置 | 本地等价命令 | Blocking |
+|---|---|---|---|
+| Ruff lint | `ci.yml` lint job | `uv run ruff check .` | ✅ |
+| Ruff format | 同上 | `uv run ruff format --check .` | ✅ |
+| Mypy（默认 / win32 / darwin） | 同上，3 个 step | `uv run mypy`、`--platform win32/darwin` | ✅ |
+| Mypy（scripts + packaging entry） | 同上 | `uv run mypy scripts packaging/pyinstaller/entry.py` | ✅ |
+| 隐私 gate（源码） | 同上 | `uv run python scripts/check_privacy.py` | ✅ |
+| 模型校验 | 同上 | `uv run python scripts/fetch_models.py --check` | ✅ |
+| 配置文档同步 | 同上（阶段 3 新增独立 step） | `uv run python scripts/gen_config_docs.py --check` | ✅ |
+| 大小门禁 | 同上（阶段 3 新增） | `uv run python scripts/lint_size.py --check` | ✅ |
+| 结构测试（依赖方向/环/纯逻辑） | `ci.yml` test job（pytest） | `uv run pytest tests/test_architecture.py -q` | ✅ |
+| 文档门禁 | `ci.yml` test job（pytest） | `uv run pytest tests/test_docs.py -q` | ✅ |
+| 全量测试 | `ci.yml` test job × 5 组合 | `uv run pytest -q` | ✅ |
+| shellcheck / desktop-file-validate | `ci.yml` lint job（apt 安装工具） | 无（CI-only；TD-CI-015） | ✅ |
+| 打包冒烟（三平台） | `bundle.yml` / `build.yml` | 分平台手工步骤（`docs/building.md`） | ✅（PR 路径命中时） |
+| 版本 guard | `build.yml` prepare | 无（CI-only，tag 时执行） | ✅（tag） |
+| 发布（checksum / attestation） | `release.yml` | 无（CI-only） | ✅（tag） |
+
+一键本地入口：`uv run python scripts/check.py`（`--quick` 跳过 pytest，`--list` 列出门禁）。
+`pre-commit` 钩子是它的快速子集：ruff（自动修复）、ruff-format、隐私 gate、大小门禁、文档门禁
+（`.pre-commit-config.yaml`，`uvx pre-commit install` 安装，decision D2）。
+
+### 4.2 本阶段变更（相对阶段 1 现状）
+
+- `ci.yml` lint job 增量新增 2 个 step：配置文档同步、大小门禁。**没有**新建 workflow、
+  重建打包流水线或改变发布行为（Tauri 三问不适用，见 §3）。
+- 新增 `scripts/lint_size.py` + `scripts/analysis/size-baseline.json`：文件 >600 行、
+  函数 >60 行、类 >300 行必须已在基线内，基线只许收缩（D10）。
+- 新增 `tests/test_architecture.py`：解析全仓 import 图，强制 `ARCHITECTURE.md` 的 R1–R5、
+  纯逻辑无 Qt/OpenCV、例外表只缩不增、模块级环不新增。
+- `tests/test_docs.py` 从 6 个用例扩到 15 个（阶段 2 已完成）；`tests/test_lint_size.py`
+  与 `tests/test_check_runner.py` 提供门禁自身的负例与一致性检查。
+- 新增 `scripts/check.py` 与 `.pre-commit-config.yaml`；`AGENTS.md` / `CONTRIBUTING.md` 同步。
+
+### 4.3 门禁自证（规则 §11.1 第 4 条）
+
+每一条新不变量都有“注入违规必须失败”的测试，而不是只靠人工：
+
+| 不变量 | 自证测试 |
+|---|---|
+| 大小门禁拒绝新增/增长 | `tests/test_lint_size.py::test_new_oversized_function_is_a_violation`、`test_baselined_function_may_not_grow`、`test_adding_a_baseline_entry_needs_force` |
+| 依赖方向拒绝反向 import | `tests/test_architecture.py::test_synthetic_wrong_direction_is_rejected` |
+| 纯逻辑拒绝 Qt/OpenCV | `tests/test_architecture.py::test_synthetic_pure_module_with_qt_is_rejected` |
+| 新循环依赖被拒绝 | `tests/test_architecture.py::test_synthetic_new_cycle_is_rejected` |
+| 例外表只能收缩 | `tests/test_architecture.py::test_exception_table_only_shrinks`、`test_synthetic_stale_exception_is_rejected` |
+| 文档索引/版本漂移被拒绝 | `tests/test_docs.py::test_docs_index_check_detects_a_missing_entry`、`test_stale_version_check_detects_drift` |
+| 隐私边界可拦截 | `tests/test_privacy.py`（既有 291 个参数化用例，含注入违规） |
+
+### 4.4 与现有配置的关系
+
+增量改造 `ci.yml`（2 个新 step）。`build.yml` / `release.yml` / `bundle.yml` / `pages.yml`
+未改动；发布方式、平台范围与签名行为保持阶段 1 记录的原样。
 
 ## 5. 变更历史
 
 | 日期 | 变更 | 原因 |
 |---|---|---|
 | 2026-11-06 | 建立本文件：框架判定 = 其他；记录现有 5 个 workflow 与发布链路 | harness 阶段 1（§3.2 / 附录 C） |
+| 2026-11-06 | 阶段 3：新增配置文档同步与大小门禁两个 CI step；建立本地门禁入口、pre-commit、结构测试与负例自证 | harness 阶段 3（§5） |

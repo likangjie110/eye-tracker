@@ -44,6 +44,12 @@ only hands over to it and says that the options were not applied.
 Run everything CI runs before opening a pull request:
 
 ```bash
+uv run python scripts/check.py   # every gate below, in the same order as CI
+```
+
+Or run them one at a time (what `scripts/check.py` does):
+
+```bash
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy --platform linux     # CI type-checks the package as on all three systems
@@ -52,7 +58,17 @@ uv run mypy --platform darwin
 uv run mypy scripts packaging/pyinstaller/entry.py
 uv run python scripts/check_privacy.py
 uv run python scripts/fetch_models.py --check
+uv run python scripts/gen_config_docs.py --check
+uv run python scripts/lint_size.py --check
 uv run pytest
+```
+
+Optional local hooks (the fast subset: ruff, privacy, size, documentation) run before each
+commit once installed:
+
+```bash
+uvx pre-commit install
+uvx pre-commit run --all-files   # try them without installing
 ```
 
 After changing a setting in `src/eye_tracker/config.py`, regenerate the configuration reference
