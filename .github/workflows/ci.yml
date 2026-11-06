@@ -40,7 +40,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --no-group build
 
       - name: Ruff (lint)
         run: uv run --no-sync ruff check --output-format=github .
