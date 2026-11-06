@@ -111,43 +111,67 @@ def parse_face_geometry(data: bytes) -> FaceGeometry:
     Raises:
         GeometryError: The data is not a valid landmark geometry message.
     """
+    vertex_buffer, basis = _scan_fields(data)
+    vertices = _mesh_vertices(vertex_buffer)
+    usable = [pair for pair in basis if 0 <= pair[0] < MESH_VERTICES and pair[1] > 0.0]
+    if len(usable) < 6:
+        raise GeometryError(f"only {len(usable)} usable landmarks in the Procrustes basis")
+    return FaceGeometry(
+        vertices=vertices,
+        basis_ids=tuple(i for i, _ in usable),
+        basis_weights=np.array([w for _, w in usable], dtype=np.float64),
+    )
+
+
+def _scan_fields(data: bytes) -> tuple[list[float], list[tuple[int, float]]]:
+    """Walk the wire fields, collecting mesh floats and landmark basis pairs."""
     vertex_buffer: list[float] = []
     basis: list[tuple[int, float]] = []
     for number, wire, value in _fields(data):
-        if number == 1 and wire == _LEN and isinstance(value, bytes):  # canonical_mesh
-            for sub, sub_wire, sub_value in _fields(value):
-                if sub == 1 and sub_value != 0:
-                    raise GeometryError(f"unsupported mesh vertex type {sub_value!r}")
-                if sub == 3:
-                    vertex_buffer += _floats(sub_wire, sub_value)
-        elif number == 2 and wire == _LEN and isinstance(value, bytes):  # landmark basis
-            landmark_id, weight = 0, 0.0
-            for sub, sub_wire, sub_value in _fields(value):
-                if sub == 1 and isinstance(sub_value, int):
-                    landmark_id = sub_value
-                elif sub == 2:
-                    values = _floats(sub_wire, sub_value)
-                    if len(values) != 1:
-                        raise GeometryError("malformed landmark weight")
-                    weight = values[0]
-            basis.append((landmark_id, weight))
+        if number == 1 and wire == _LEN and isinstance(value, bytes):
+            vertex_buffer += _mesh_vertex_values(value)
+        elif number == 2 and wire == _LEN and isinstance(value, bytes):
+            basis.append(_landmark_pair(value))
+    return vertex_buffer, basis
 
+
+def _mesh_vertex_values(value: bytes) -> list[float]:
+    """``float`` values of one canonical-mesh submessage."""
+    numbers: list[float] = []
+    for sub, sub_wire, sub_value in _fields(value):
+        if sub == 1 and sub_value != 0:
+            raise GeometryError(f"unsupported mesh vertex type {sub_value!r}")
+        if sub == 3:
+            numbers += _floats(sub_wire, sub_value)
+    return numbers
+
+
+def _landmark_pair(value: bytes) -> tuple[int, float]:
+    """One landmark-basis entry (``(0, 0.0)`` when the submessage omits a field)."""
+    landmark_id, weight = 0, 0.0
+    for sub, sub_wire, sub_value in _fields(value):
+        if sub == 1 and isinstance(sub_value, int):
+            landmark_id = sub_value
+        elif sub == 2:
+            values = _floats(sub_wire, sub_value)
+            if len(values) != 1:
+                raise GeometryError("malformed landmark weight")
+            weight = values[0]
+    return landmark_id, weight
+
+
+def _mesh_vertices(vertex_buffer: list[float]) -> np.ndarray:
+    """Validate the flat vertex buffer and return its ``(N, 3)`` finite array."""
     if len(vertex_buffer) != MESH_VERTICES * _FLOATS_PER_VERTEX:
         raise GeometryError(
             f"expected {MESH_VERTICES} mesh vertices, found "
             f"{len(vertex_buffer) / _FLOATS_PER_VERTEX:g}"
         )
-    vertices = np.asarray(vertex_buffer, dtype=np.float64).reshape(-1, _FLOATS_PER_VERTEX)[:, :3]
+    vertices = np.asarray(vertex_buffer, dtype=np.float64)
+    vertices = vertices.reshape(-1, _FLOATS_PER_VERTEX)[:, :3]
     if not np.all(np.isfinite(vertices)):
         raise GeometryError("non-finite mesh vertices")
-    basis = [(i, w) for i, w in basis if 0 <= i < MESH_VERTICES and w > 0.0]
-    if len(basis) < 6:
-        raise GeometryError(f"only {len(basis)} usable landmarks in the Procrustes basis")
-    return FaceGeometry(
-        vertices=vertices,
-        basis_ids=tuple(i for i, _ in basis),
-        basis_weights=np.array([w for _, w in basis], dtype=np.float64),
-    )
+    return vertices
 
 
 def load_face_geometry(path: Path) -> FaceGeometry:
