@@ -22,7 +22,7 @@ import pytest
 
 import eye_tracker.platform as platform_pkg
 from eye_tracker import APP_ID
-from eye_tracker.platform import windows
+from eye_tracker.platform import windows_api, windows_platform
 from eye_tracker.platform.base import PlatformServices
 from eye_tracker.platform.windows import WindowsPlatform
 from eye_tracker.types import AppIdentity, Rect, WindowRef
@@ -52,7 +52,7 @@ class FakeWindow:
 
 
 class FakeWin32:
-    """Stand-in for ``windows._Win32`` with a scriptable foreground lock.
+    """Stand-in for ``windows_api._Win32`` with a scriptable foreground lock.
 
     ``unlock`` decides which strategy lets ``set_foreground`` succeed:
     ``"any"`` (no lock), ``"attach"``, ``"input"``, ``"alt"`` or ``"never"``.
@@ -299,10 +299,10 @@ def make_platform(api: Any, registry: Any | None = None, *, pid: int = OWN_PID) 
     return plat
 
 
-WEBCAM = windows._WEBCAM_KEY
+WEBCAM = windows_api._WEBCAM_KEY
 NON_PACKAGED = f"{WEBCAM}\\NonPackaged"
 SESSION_START = 133_000_000_000_000_000  # FILETIME of the open camera session
-BOOT = SESSION_START - 3600 * windows.FILETIME_TICKS_PER_S  # booted an hour earlier
+BOOT = SESSION_START - 3600 * windows_api.FILETIME_TICKS_PER_S  # booted an hour earlier
 IN_USE = {"LastUsedTimeStart": SESSION_START, "LastUsedTimeStop": 0}
 STOPPED = {"LastUsedTimeStart": SESSION_START, "LastUsedTimeStop": 133_000_000_100_000}
 ZOOM = r"C:\Program Files\Zoom\Zoom.exe"
@@ -324,11 +324,11 @@ def proc(pid: int, name: str, *, created: int | None = SESSION_START - 600 * 10_
     return Proc(pid=pid, name=name, created=created)
 
 
-def listed(processes: list[Proc] | None) -> list[windows._Process] | None:
+def listed(processes: list[Proc] | None) -> list[windows_api._Process] | None:
     """``processes`` as ``WindowsPlatform._processes`` lists them."""
     if processes is None:
         return None
-    return [windows._Process(pid=p.pid, name=p.name) for p in processes]
+    return [windows_api._Process(pid=p.pid, name=p.name) for p in processes]
 
 
 @pytest.fixture
@@ -397,25 +397,28 @@ class TestHelpers:
         ],
     )
     def test_elapsed_ms_handles_wrap(self, now: int, last: int, expected: int) -> None:
-        assert windows._elapsed_ms(now, last) == expected
+        assert windows_api._elapsed_ms(now, last) == expected
 
     def test_norm_path_is_windows_style_everywhere(self) -> None:
-        assert windows._norm_path("C:/Program Files/App/APP.EXE") == r"c:\program files\app\app.exe"
+        assert (
+            windows_api._norm_path("C:/Program Files/App/APP.EXE")
+            == r"c:\program files\app\app.exe"
+        )
 
     @pytest.mark.parametrize(
         ("handle", "expected"),
         [(123, 123), (0, None), (-5, None), (None, None), ("abc", None), (True, None)],
     )
     def test_hwnd_of(self, handle: Any, expected: int | None) -> None:
-        assert windows._hwnd_of(WindowRef(handle=handle)) == expected
+        assert windows_api._hwnd_of(WindowRef(handle=handle)) == expected
 
     def test_hwnd_of_none_ref(self) -> None:
-        assert windows._hwnd_of(None) is None
+        assert windows_api._hwnd_of(None) is None
 
     def test_camera_user_executable(self) -> None:
-        user = windows._CameraUser("C:#Program Files#Zoom#Zoom.exe", packaged=False)
+        user = windows_api._CameraUser("C:#Program Files#Zoom#Zoom.exe", packaged=False)
         assert user.executable == r"C:\Program Files\Zoom\Zoom.exe"
-        packaged = windows._CameraUser("Microsoft.WindowsCamera_8wekyb3d8bbwe", packaged=True)
+        packaged = windows_api._CameraUser("Microsoft.WindowsCamera_8wekyb3d8bbwe", packaged=True)
         assert packaged.executable == "Microsoft.WindowsCamera_8wekyb3d8bbwe"
 
     @pytest.mark.parametrize(
@@ -430,12 +433,12 @@ class TestHelpers:
         ],
     )
     def test_is_in_use(self, values: dict[str, Any], expected: bool) -> None:
-        assert windows._is_in_use(values) is expected
-        assert (windows._session_start(values) is not None) is expected
+        assert windows_api._is_in_use(values) is expected
+        assert (windows_api._session_start(values) is not None) is expected
 
     def test_unix_to_filetime(self) -> None:
-        assert windows._unix_to_filetime(0) == 116_444_736_000_000_000
-        assert windows._unix_to_filetime(1.5) == 116_444_736_015_000_000
+        assert windows_api._unix_to_filetime(0) == 116_444_736_000_000_000
+        assert windows_api._unix_to_filetime(1.5) == 116_444_736_015_000_000
 
     def test_process_helpers_read_this_process(self) -> None:
         """psutil-backed helpers (read-only, any OS)."""
@@ -491,7 +494,7 @@ class TestLifecycle:
     def test_prepare_process_sets_env_and_calls_api(self) -> None:
         api = FakeWin32([])
         make_platform(api).prepare_process()
-        assert windows.os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "0"
+        assert os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "0"
         assert ("dpi",) in api.calls
         assert ("aumid", APP_ID) in api.calls
 
@@ -501,20 +504,20 @@ class TestLifecycle:
         clean_qt_env.setenv("QT_ENABLE_HIGHDPI_SCALING", "1")
         with caplog.at_level(logging.WARNING, logger="eye_tracker.platform.windows"):
             make_platform(FakeWin32([])).prepare_process()
-        assert windows.os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "1"
+        assert os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "1"
         assert "QT_ENABLE_HIGHDPI_SCALING" in caplog.text
 
     @pytest.mark.usefixtures("clean_qt_env")
     def test_prepare_process_survives_api_failure(self) -> None:
         make_platform(ExplodingApi()).prepare_process()
-        assert windows.os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "0"
+        assert os.environ["QT_ENABLE_HIGHDPI_SCALING"] == "0"
 
     def test_missing_win32_api_degrades(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # What happens on macOS/Linux (or a stripped-down Windows): no DLLs load.
         loads: list[str] = []
-        monkeypatch.setattr(windows, "_load_dll", loads.append)  # returns None
+        monkeypatch.setattr(windows_api, "_load_dll", loads.append)  # returns None
         with pytest.raises(OSError, match="only available on Windows"):
-            windows._Win32()
+            windows_api._Win32()
         loads.clear()
         plat = WindowsPlatform(registry=FakeRegistry())
         assert plat.seconds_since_input() is None
@@ -546,9 +549,9 @@ class TestSessionAndInput:
             (
                 "send_message",
                 0x5150,
-                windows.WM_SYSCOMMAND,
-                windows.SC_MONITORPOWER,
-                windows.MONITOR_POWER_OFF,
+                windows_api.WM_SYSCOMMAND,
+                windows_api.SC_MONITORPOWER,
+                windows_api.MONITOR_POWER_OFF,
             ),
             ("destroy_window", 0x5150),
         ]
@@ -560,9 +563,9 @@ class TestSessionAndInput:
         assert make_platform(api).display_off() is True
         assert api.calls[-1] == (
             "post_broadcast",
-            windows.WM_SYSCOMMAND,
-            windows.SC_MONITORPOWER,
-            windows.MONITOR_POWER_OFF,
+            windows_api.WM_SYSCOMMAND,
+            windows_api.SC_MONITORPOWER,
+            windows_api.MONITOR_POWER_OFF,
         )
         assert "send_message" not in api.names()
 
@@ -670,11 +673,11 @@ class TestWindows:
         stack = [
             FakeWindow(1, pid=OWN_PID, rect=Rect(0, 0, 500, 500)),  # our overlay/dialog
             FakeWindow(2, visible=False),
-            FakeWindow(3, ex_style=windows.WS_EX_TRANSPARENT),
+            FakeWindow(3, ex_style=windows_api.WS_EX_TRANSPARENT),
             FakeWindow(4, cloaked=True),
             FakeWindow(5, iconic=True),
             FakeWindow(6, rect=Rect(900, 900, 50, 50)),  # does not contain the point
-            FakeWindow(7, ex_style=windows.WS_EX_NOACTIVATE),
+            FakeWindow(7, ex_style=windows_api.WS_EX_NOACTIVATE),
             FakeWindow(8, pid=9, rect=Rect(0, 0, 400, 400)),  # the user's window
             FakeWindow(9, cls="Progman", rect=Rect(0, 0, 4000, 4000)),
         ]
@@ -851,10 +854,10 @@ class TestCamera:
                 ("HKLM", f"{NON_PACKAGED}\\C:#Svc#svc.exe"): IN_USE,  # HKLM is ignored
             }
         )
-        users = windows._active_camera_users(registry)
+        users = windows_api._active_camera_users(registry)
         assert sorted(users, key=lambda u: u.app) == [
-            windows._CameraUser("C:#Zoom#Zoom.exe", packaged=False, start=SESSION_START),
-            windows._CameraUser(
+            windows_api._CameraUser("C:#Zoom#Zoom.exe", packaged=False, start=SESSION_START),
+            windows_api._CameraUser(
                 "Microsoft.WindowsCamera_8wekyb3d8bbwe", packaged=True, start=SESSION_START
             ),
         ]
@@ -879,7 +882,7 @@ class TestCamera:
             {("HKCU", f"{WEBCAM}\\{app}"): values for app, values in (packaged or {}).items()}
         )
         plat = make_platform(api or FakeWin32([]), FakeRegistry(keys))
-        plat._own_paths = frozenset({windows._norm_path(r"C:\Python\python.exe")})
+        plat._own_paths = frozenset({windows_api._norm_path(r"C:\Python\python.exe")})
         plat._processes = lambda: listed(processes)  # type: ignore[method-assign]
         created = {p.pid: p.created for p in processes or []}
         self.created_reads: list[int] = []
@@ -916,12 +919,12 @@ class TestCamera:
 
     def test_app_started_after_the_session_does_not_count(self) -> None:
         """Chrome crashed mid-call; the Chrome running now never opened the camera."""
-        later = proc(1, "zoom.exe", created=SESSION_START + 60 * windows.FILETIME_TICKS_PER_S)
+        later = proc(1, "zoom.exe", created=SESSION_START + 60 * windows_api.FILETIME_TICKS_PER_S)
         plat = self._platform({ZOOM_KEY: IN_USE}, [later], exes={1: ZOOM})
         assert plat.camera_in_use_by_other_app() is False
 
     def test_creation_time_rounding_is_tolerated(self) -> None:
-        close = proc(1, "zoom.exe", created=SESSION_START + windows.FILETIME_TICKS_PER_S)
+        close = proc(1, "zoom.exe", created=SESSION_START + windows_api.FILETIME_TICKS_PER_S)
         plat = self._platform({ZOOM_KEY: IN_USE}, [close], exes={1: ZOOM})
         assert plat.camera_in_use_by_other_app() is True
 
@@ -933,11 +936,11 @@ class TestCamera:
         """Power loss mid-call leaves LastUsedTimeStop at 0 forever."""
         processes_listed: list[int] = []
 
-        def processes() -> list[windows._Process]:
+        def processes() -> list[windows_api._Process]:
             processes_listed.append(1)
-            return [windows._Process(pid=1, name="zoom.exe")]
+            return [windows_api._Process(pid=1, name="zoom.exe")]
 
-        next_day = SESSION_START + 24 * 3600 * windows.FILETIME_TICKS_PER_S
+        next_day = SESSION_START + 24 * 3600 * windows_api.FILETIME_TICKS_PER_S
         plat = self._platform({ZOOM_KEY: IN_USE}, None, exes={1: ZOOM}, boot=next_day)
         plat._processes = processes  # type: ignore[method-assign]
         assert plat.camera_in_use_by_other_app() is False
@@ -945,7 +948,7 @@ class TestCamera:
 
     def test_session_just_before_the_boot_time_goes_to_the_process_check(self) -> None:
         """The boot time comes from the current clock, which NTP may have moved."""
-        boot = SESSION_START + 60 * windows.FILETIME_TICKS_PER_S
+        boot = SESSION_START + 60 * windows_api.FILETIME_TICKS_PER_S
         plat = self._platform({ZOOM_KEY: IN_USE}, [proc(1, "zoom.exe")], exes={1: ZOOM}, boot=boot)
         assert plat.camera_in_use_by_other_app() is True
 
@@ -1004,7 +1007,9 @@ class TestCamera:
     def test_packaged_process_started_after_the_session_does_not_count(self) -> None:
         api = FakeWin32([])
         api.packages = {7: "MSTeams_8wekyb3d8bbwe"}
-        late = proc(7, "ms-teams.exe", created=SESSION_START + 60 * windows.FILETIME_TICKS_PER_S)
+        late = proc(
+            7, "ms-teams.exe", created=SESSION_START + 60 * windows_api.FILETIME_TICKS_PER_S
+        )
         plat = self._platform({}, [late], packaged={"MSTeams_8wekyb3d8bbwe": IN_USE}, api=api)
         assert plat.camera_in_use_by_other_app() is False
 
@@ -1037,7 +1042,7 @@ class TestCamera:
     def test_without_package_identity_packaged_entries_are_others(self) -> None:
         plat = self._platform({}, [proc(9, "x.exe")])
         assert plat._own_package() == ""
-        assert not plat._is_own_camera_user(windows._CameraUser("", packaged=True, start=1))
+        assert not plat._is_own_camera_user(windows_api._CameraUser("", packaged=True, start=1))
 
     def test_package_lookup_failure_means_no_package(self) -> None:
         class NoPackageApi(FakeWin32):
@@ -1053,12 +1058,12 @@ class TestCamera:
         assert plat.camera_in_use_by_other_app() is None
 
     def test_own_executables_include_process_image(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(windows.sys, "executable", r"D:\venv\Scripts\python.exe")
+        monkeypatch.setattr(sys, "executable", r"D:\venv\Scripts\python.exe")
         api = FakeWin32([])
         api.image_path = r"C:\Base\Python312\python.exe"
         own = make_platform(api)._own_executables()
-        assert windows._norm_path(r"D:\venv\Scripts\python.exe") in own
-        assert windows._norm_path(r"C:\Base\Python312\python.exe") in own
+        assert windows_api._norm_path(r"D:\venv\Scripts\python.exe") in own
+        assert windows_api._norm_path(r"C:\Base\Python312\python.exe") in own
 
     def test_redirected_interpreter_of_a_packaged_parent_is_own(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1069,25 +1074,23 @@ class TestCamera:
             r"C:\Users\me\AppData\Local\Packages\Host_abc\LocalCache"
             r"\Roaming\uv\python\cpython-3.12\python.exe"
         )
-        monkeypatch.setattr(windows.sys, "executable", virtual)
-        monkeypatch.setattr(windows.sys, "_base_executable", virtual, raising=False)
-        monkeypatch.setattr(
-            windows.os.path, "realpath", lambda p: "\\\\?\\" + real if p == virtual else p
-        )
+        monkeypatch.setattr(sys, "executable", virtual)
+        monkeypatch.setattr(sys, "_base_executable", virtual, raising=False)
+        monkeypatch.setattr(os.path, "realpath", lambda p: "\\\\?\\" + real if p == virtual else p)
         api = FakeWin32([])
         api.image_path = virtual
         plat = make_platform(api)
         key = real.replace("\\", "#")
-        assert plat._is_own_camera_user(windows._CameraUser(key, packaged=False, start=1))
+        assert plat._is_own_camera_user(windows_api._CameraUser(key, packaged=False, start=1))
 
     def test_unresolvable_path_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def broken(path: str) -> str:
             raise OSError("gone")
 
-        monkeypatch.setattr(windows.sys, "executable", r"D:\venv\Scripts\python.exe")
-        monkeypatch.setattr(windows.os.path, "realpath", broken)
+        monkeypatch.setattr(sys, "executable", r"D:\venv\Scripts\python.exe")
+        monkeypatch.setattr(os.path, "realpath", broken)
         own = make_platform(FakeWin32([]))._own_executables()
-        assert windows._norm_path(r"D:\venv\Scripts\python.exe") in own
+        assert windows_api._norm_path(r"D:\venv\Scripts\python.exe") in own
 
 
 class TestPermissions:
@@ -1116,7 +1119,7 @@ class TestPermissions:
 
     def test_open_permission_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         opened: list[str] = []
-        monkeypatch.setattr(windows, "_open_uri", lambda uri: opened.append(uri) or True)
+        monkeypatch.setattr(windows_platform, "_open_uri", lambda uri: opened.append(uri) or True)
         plat = make_platform(FakeWin32([]))
         assert plat.open_permission_settings("camera") is True
         assert plat.open_permission_settings("accessibility") is False
@@ -1130,11 +1133,11 @@ class TestLiveReadOnly:
 
     def test_structure_sizes_match_the_sdk(self) -> None:
         pointer_size = ctypes.sizeof(ctypes.c_void_p)
-        assert ctypes.sizeof(windows.INPUT) == (40 if pointer_size == 8 else 28)
-        assert ctypes.sizeof(windows.LASTINPUTINFO) == 8
+        assert ctypes.sizeof(windows_api.INPUT) == (40 if pointer_size == 8 else 28)
+        assert ctypes.sizeof(windows_api.LASTINPUTINFO) == 8
 
     def test_every_binding_has_a_prototype(self) -> None:
-        api = windows._Win32()
+        api = windows_api._Win32()
         bound = {name: fn for name, fn in vars(api).items() if fn is not None}
         assert len(bound) > 30
         for name, fn in bound.items():
@@ -1175,18 +1178,18 @@ class TestLiveReadOnly:
         assert perms["accessibility"] is None
 
     def test_registry_reader(self) -> None:
-        reader = windows._WinRegistry()
+        reader = windows_api._WinRegistry()
         assert reader.subkeys("HKCU", "Software")
         assert reader.values("HKCU", r"Software\eye-tracker-tests\does-not-exist") == {}
         assert reader.subkeys("HKCU", r"Software\eye-tracker-tests\does-not-exist") == []
 
     def test_process_image_path(self) -> None:
-        path = windows._Win32().process_image_path()
+        path = windows_api._Win32().process_image_path()
         assert path is not None
         assert Path(path).is_file()
 
     def test_package_identity_queries(self) -> None:
-        api = windows._Win32()
+        api = windows_api._Win32()
         own = api.current_package_family_name()
         assert own is None or "_" in own  # "<name>_<publisher id>" under the Store Python
         assert api.process_package_family_name(os.getpid()) == own
@@ -1194,7 +1197,7 @@ class TestLiveReadOnly:
 
     def test_hidden_window_is_created_and_destroyed(self) -> None:
         """Only our own invisible window is touched; no message is sent to it."""
-        api = windows._Win32()
+        api = windows_api._Win32()
         hwnd = api.create_hidden_window()
         assert hwnd is not None
         try:
@@ -1211,7 +1214,7 @@ class TestLiveReadOnly:
         The target is a hidden window of our own, owned by a helper thread that
         stops pumping for a while, like an app paused in a debugger.
         """
-        api = windows._Win32()
+        api = windows_api._Win32()
         created = threading.Event()
         release = threading.Event()
         owned: list[int] = []
