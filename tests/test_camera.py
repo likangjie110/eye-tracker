@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from eye_tracker.vision import camera as camera_mod
+from eye_tracker.vision import camera_devices
 from eye_tracker.vision.camera import (
     Camera,
     CameraError,
@@ -676,7 +677,7 @@ def linux(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         return False if str(path).startswith("/dev/") else real_isfile(path)
 
     monkeypatch.setattr(camera_mod.sys, "platform", "linux")
-    monkeypatch.setattr(camera_mod, "_resolve_link", lambda p: links.get(p, p))
+    monkeypatch.setattr(camera_devices, "_resolve_link", lambda p: links.get(p, p))
     monkeypatch.setattr(camera_mod.os.path, "exists", exists)
     monkeypatch.setattr(camera_mod.os.path, "isfile", isfile)
     return links
