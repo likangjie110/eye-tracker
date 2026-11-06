@@ -329,3 +329,25 @@ def test_changelog_lists_the_current_version() -> None:
     assert current is not None
     versions = re.findall(r"^##\s+\[?(\d+\.\d+\.\d+)", changelog, re.MULTILINE)
     assert current.group(1) in versions, f"CHANGELOG.md has no {current.group(1)} section"
+
+
+# ---------------------------------------------------------------- README perf (TD-DOC-011)
+def _perf_block(page: str) -> str:
+    text = (ROOT / page).read_text(encoding="utf-8")
+    begin, end = "<!-- PERF:BEGIN -->", "<!-- PERF:END -->"
+    assert begin in text, f"{page} lost its PERF:BEGIN marker"
+    assert end in text, f"{page} lost its PERF:END marker"
+    return text.split(begin, 1)[1].split(end, 1)[0]
+
+
+def _perf_numbers(block: str) -> list[str]:
+    # Turkish uses a decimal comma; both pages must report the same measurements.
+    return [number.replace(",", ".") for number in re.findall(r"\d+(?:[.,]\d+)?", block)]
+
+
+def test_readme_performance_blocks_stay_in_sync() -> None:
+    """The measured numbers are hand-copied to the Turkish README; this gate catches drift."""
+    # Order differs because the Turkish sentence lists the camera resolution first.
+    english = _perf_numbers(_perf_block("README.md"))
+    turkish = _perf_numbers(_perf_block("README.tr.md"))
+    assert sorted(english) == sorted(turkish)
