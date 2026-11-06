@@ -21,7 +21,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from eye_tracker.platform import hotkeys
+from eye_tracker.platform import hotkeys, hotkeys_base, hotkeys_x11
 from eye_tracker.platform.hotkeys import (
     KEYS,
     MODIFIERS,
@@ -569,7 +569,7 @@ def test_altgr_conflict_with_shift_and_dead_keys() -> None:
     ],
 )
 def test_typed_characters_are_described_readably(text: str, expected: str) -> None:
-    assert hotkeys._describe_typed(text) == expected
+    assert hotkeys_base._describe_typed(text) == expected
 
 
 def test_altgr_conflict_messages_read_well() -> None:
@@ -695,7 +695,7 @@ def test_win32_layout_probe_queries(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ======================================================== generic threaded machinery
-class LoopbackManager(hotkeys._ThreadedHotkeyManager):
+class LoopbackManager(hotkeys_base._ThreadedHotkeyManager):
     """A portable threaded manager whose "OS" is a dict, to test the shared plumbing."""
 
     name = "loopback"
@@ -890,7 +890,7 @@ def test_call_timeout_returns_default(monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         release = threading.Event()
         # Occupy the backend thread so the next call cannot start in time.
-        manager._calls.put(hotkeys._PendingCall(lambda: release.wait(1.0)))
+        manager._calls.put(hotkeys_base._PendingCall(lambda: release.wait(1.0)))
         manager._wake()
         assert manager._call_on_thread(lambda: "late", "default") == "default"
         release.set()
@@ -1543,7 +1543,7 @@ def test_mac_carbon_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 KEYSYMS = {
     name: index + 1
     for index, name in enumerate(
-        sorted(set(hotkeys._X_KEYSYM_NAMES.values()) | {"Num_Lock", "Super_L", "Super_R"})
+        sorted(set(hotkeys_x11._X_KEYSYM_NAMES.values()) | {"Num_Lock", "Super_L", "Super_R"})
     )
 }
 NUMLOCK_KEYCODE = KEYSYMS["Num_Lock"] + 8
@@ -1671,7 +1671,7 @@ class FakeDisplay:
 
 
 def property_event(atom: int) -> Any:
-    return types.SimpleNamespace(type=hotkeys._X_PROPERTY_NOTIFY, atom=atom, state=0)
+    return types.SimpleNamespace(type=hotkeys_x11._X_PROPERTY_NOTIFY, atom=atom, state=0)
 
 
 def key_event(kind: int, keycode: int, state: int, time: int) -> Any:
@@ -1679,12 +1679,12 @@ def key_event(kind: int, keycode: int, state: int, time: int) -> Any:
 
 
 def keycode_of(key: str) -> int:
-    return KEYSYMS[hotkeys._X_KEYSYM_NAMES[key]] + 8
+    return KEYSYMS[hotkeys_x11._X_KEYSYM_NAMES[key]] + 8
 
 
 @pytest.fixture
 def fake_keysyms(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(hotkeys, "_x11_string_to_keysym", lambda name: KEYSYMS.get(name, 0))
+    monkeypatch.setattr(hotkeys_x11, "_x11_string_to_keysym", lambda name: KEYSYMS.get(name, 0))
 
 
 @pytest.fixture
@@ -1699,25 +1699,25 @@ def x11(fake_keysyms: None) -> tuple[X11HotkeyManager, FakeDisplay]:
 
 
 def bind_x11(manager: X11HotkeyManager, name: str, text: str, callback: Callable[[], None]) -> Any:
-    binding = hotkeys._Binding(manager._allocate_id(), name, parse_hotkey(text), callback)
+    binding = hotkeys_base._Binding(manager._allocate_id(), name, parse_hotkey(text), callback)
     manager._by_id[binding.id] = binding
     manager._bindings[name] = binding
     return binding
 
 
 def test_x11_lock_variants() -> None:
-    assert hotkeys._x11_lock_variants(16) == (0, 2, 16, 18)
-    assert hotkeys._x11_lock_variants(32) == (0, 2, 32, 34)
-    assert hotkeys._x11_lock_variants(2) == (0, 2)  # degenerate keymap: no duplicates
+    assert hotkeys_x11._x11_lock_variants(16) == (0, 2, 16, 18)
+    assert hotkeys_x11._x11_lock_variants(32) == (0, 2, 32, 34)
+    assert hotkeys_x11._x11_lock_variants(2) == (0, 2)  # degenerate keymap: no duplicates
 
 
 def test_x11_modifier_masks() -> None:
-    assert hotkeys._x11_modifiers({"ctrl", "alt"}) == 4 | 8
-    assert hotkeys._x11_modifiers({"shift", "meta"}) == 1 | 64
+    assert hotkeys_x11._x11_modifiers({"ctrl", "alt"}) == 4 | 8
+    assert hotkeys_x11._x11_modifiers({"shift", "meta"}) == 1 | 64
 
 
 def test_x11_keysym_names_cover_every_key() -> None:
-    assert set(hotkeys._X_KEYSYM_NAMES) == set(KEYS)
+    assert set(hotkeys_x11._X_KEYSYM_NAMES) == set(KEYS)
 
 
 def test_x11_numlock_detection(x11: tuple[X11HotkeyManager, FakeDisplay]) -> None:
@@ -1763,7 +1763,7 @@ def test_x11_event_dispatch_and_autorepeat(x11: tuple[X11HotkeyManager, FakeDisp
     binding = bind_x11(manager, "t", "ctrl+alt+p", lambda: fired.append(1))
     assert manager._grab_binding(binding)
     code = keycode_of("p")
-    press, release = hotkeys._X_KEY_PRESS, hotkeys._X_KEY_RELEASE
+    press, release = hotkeys_x11._X_KEY_PRESS, hotkeys_x11._X_KEY_RELEASE
 
     # Caps Lock + Num Lock active: still matches.
     manager._handle_event(key_event(press, code, 12 | 2 | 16, 1000))
@@ -1792,9 +1792,9 @@ def test_x11_timestamp_wraparound(x11: tuple[X11HotkeyManager, FakeDisplay]) -> 
     binding = bind_x11(manager, "t", "ctrl+alt+p", lambda: fired.append(1))
     assert manager._grab_binding(binding)
     code = keycode_of("p")
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, 12, 0xFFFFFF00))
-    manager._handle_event(key_event(hotkeys._X_KEY_RELEASE, code, 12, 0xFFFFFFFF))
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, 12, 0x00000100))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, 12, 0xFFFFFF00))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_RELEASE, code, 12, 0xFFFFFFFF))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, 12, 0x00000100))
     assert fired == [1, 1]
 
 
@@ -1810,8 +1810,10 @@ def test_x11_releasing_modifiers_first_rearms_the_hotkey(
     assert manager._grab_binding(binding)
     code = keycode_of("p")
     for n in range(1, 6):
-        manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, 12, 1000 * n))
-        manager._handle_event(key_event(hotkeys._X_KEY_RELEASE, code, release_state, 1000 * n + 90))
+        manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, 12, 1000 * n))
+        manager._handle_event(
+            key_event(hotkeys_x11._X_KEY_RELEASE, code, release_state, 1000 * n + 90)
+        )
     assert fired == [1] * 5
 
 
@@ -1824,7 +1826,7 @@ def test_x11_release_of_another_key_keeps_the_hotkey_held(
     k = bind_x11(manager, "k", "ctrl+alt+shift+k", lambda: fired.append("k"))
     assert manager._grab_binding(p)
     assert manager._grab_binding(k)
-    press, release = hotkeys._X_KEY_PRESS, hotkeys._X_KEY_RELEASE
+    press, release = hotkeys_x11._X_KEY_PRESS, hotkeys_x11._X_KEY_RELEASE
     manager._handle_event(key_event(press, keycode_of("p"), 12, 100))
     manager._handle_event(key_event(release, keycode_of("k"), 0, 200))  # not P's release
     manager._handle_event(key_event(press, keycode_of("p"), 12, 300))  # P still held
@@ -1842,7 +1844,7 @@ def test_x11_hotkey_lost_by_a_layout_change_comes_back(
     fired: list[int] = []
     binding = bind_x11(manager, "t", "ctrl+alt+p", lambda: fired.append(1))
     assert manager._grab_binding(binding)
-    mapping = types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=1)
+    mapping = types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=1)
     code = display.keymap.pop(KEYSYMS["p"])  # e.g. `setxkbmap ru`: no Latin keysyms
     manager._handle_event(mapping)
     assert display.root.grabs == set()
@@ -1855,7 +1857,7 @@ def test_x11_hotkey_lost_by_a_layout_change_comes_back(
     assert (code, 12) in display.root.grabs
     assert manager.registered == {"t": parse_hotkey("ctrl+alt+p")}
     assert manager.last_error("t") is None
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, 12, 10))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, 12, 10))
     assert fired == [1]
 
 
@@ -1865,13 +1867,13 @@ def test_x11_regrab_keeps_in_flight_and_drops_removed_bindings(
     manager, display = x11
     # Registration in flight: published in _by_id and grabbed on the hotkey thread,
     # but register() has not added it to _bindings yet.
-    in_flight = hotkeys._Binding(manager._allocate_id(), "new", hk("ctrl+alt+k"), lambda: None)
+    in_flight = hotkeys_base._Binding(manager._allocate_id(), "new", hk("ctrl+alt+k"), lambda: None)
     manager._by_id[in_flight.id] = in_flight
     assert manager._grab_binding(in_flight)
     # Removal in flight: _remove() forgot the binding, its ungrab is still queued.
-    removed = hotkeys._Binding(manager._allocate_id(), "old", hk("ctrl+alt+j"), lambda: None)
+    removed = hotkeys_base._Binding(manager._allocate_id(), "old", hk("ctrl+alt+j"), lambda: None)
     assert manager._grab_binding(removed)
-    manager._handle_event(types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=0))
+    manager._handle_event(types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=0))
     assert {code for code, _mods in display.root.grabs} == {keycode_of("k")}
     assert set(manager._grabs) == {in_flight.id}
 
@@ -1902,19 +1904,19 @@ def test_x11_mapping_notify_regrabs(x11: tuple[X11HotkeyManager, FakeDisplay]) -
     old = keycode_of("p")
     new = old + 100
     display.keymap[KEYSYMS["p"]] = new  # layout change moved the key
-    event = types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=1)
+    event = types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=1)
     manager._handle_event(event)
     assert display.refreshed == [event]
     assert {code for code, _ in display.root.grabs} == {new}
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, new, 12, 10))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, new, 12, 10))
     assert fired == [1]
     # Pointer mapping changes are irrelevant.
-    manager._handle_event(types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=2))
+    manager._handle_event(types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=2))
     assert len(display.refreshed) == 1
 
 
 def test_x11_error_catcher_protocol() -> None:
-    catcher = hotkeys._XErrorCatcher()
+    catcher = hotkeys_x11._XErrorCatcher()
     assert catcher("first", None) == 1  # truthy: python-xlib treats the error as handled
     catcher("second", None)
     assert catcher.error == "first"
@@ -1948,7 +1950,7 @@ def x11_labels(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_x11_parse_xkb_options(value: Any, expected: tuple[str, ...]) -> None:
-    assert hotkeys._x11_parse_xkb_options(value) == expected
+    assert hotkeys_x11._x11_parse_xkb_options(value) == expected
 
 
 @pytest.mark.parametrize(
@@ -2052,7 +2054,7 @@ def test_x11_parse_xkb_options(value: Any, expected: tuple[str, ...]) -> None:
 def test_x11_layout_switch_conflict(
     x11_labels: None, text: str, options: list[str], expected: str | None
 ) -> None:
-    assert hotkeys._x11_layout_switch_conflict(hk(text), options) == expected
+    assert hotkeys_x11._x11_layout_switch_conflict(hk(text), options) == expected
 
 
 #: Layout switches and other XKB options people commonly set (GNOME Tweaks, KDE and
@@ -2095,22 +2097,22 @@ def test_x11_default_hotkeys_survive_the_usual_layout_switches(
     monkeypatch.setattr(sys, "platform", "linux")
     defaults = HotkeySettings()
     for text in (defaults.toggle_tracking, defaults.toggle_privacy, defaults.recalibrate):
-        assert hotkeys._x11_layout_switch_conflict(hk(text), COMMON_XKB_OPTIONS) is None, text
+        assert hotkeys_x11._x11_layout_switch_conflict(hk(text), COMMON_XKB_OPTIONS) is None, text
     # The previous defaults could not be pressed with the two most common switches.
     for option in (ALT_SHIFT, "grp:ctrl_shift_toggle"):
         for text in LEGACY_HOTKEYS_X11:
-            assert hotkeys._x11_layout_switch_conflict(hk(text), [option]) is not None
+            assert hotkeys_x11._x11_layout_switch_conflict(hk(text), [option]) is not None
 
 
 def test_x11_layout_switch_table_is_consistent() -> None:
-    for option, taken in hotkeys._X_KEY_OPTIONS.items():
+    for option, taken in hotkeys_x11._X_KEY_OPTIONS.items():
         assert option.startswith(("grp:", "lv3:", "lv5:", "altwin:")), option
         assert taken.modifiers, option
         assert taken.modifiers <= set(MODIFIERS), option
         assert taken.key is None or taken.key in KEYS, option
     # Right-hand-only switches leave the keys that chords are pressed with alone.
     for option in ("grp:ralt_rshift_toggle", "grp:rctrl_rshift_toggle", "grp:rwin_toggle"):
-        assert option not in hotkeys._X_KEY_OPTIONS
+        assert option not in hotkeys_x11._X_KEY_OPTIONS
 
 
 def test_x11_refuses_a_hotkey_the_layout_switch_makes_unpressable(
@@ -2120,7 +2122,7 @@ def test_x11_refuses_a_hotkey_the_layout_switch_makes_unpressable(
     display.set_xkb_options(ALT_SHIFT, "terminate:ctrl_alt_bksp")
     manager._follow_xkb_options()
     assert manager._xkb_options == (ALT_SHIFT, "terminate:ctrl_alt_bksp")
-    assert display.root.event_mask == hotkeys._X_PROPERTY_CHANGE_MASK
+    assert display.root.event_mask == hotkeys_x11._X_PROPERTY_CHANGE_MASK
     blocked = bind_x11(manager, "t", "ctrl+alt+shift+t", lambda: None)
     # XGrabKey would succeed and the hotkey would silently never fire: refuse it.
     assert not manager._grab_binding(blocked)
@@ -2168,7 +2170,7 @@ def test_x11_follows_layout_switch_changes(
     assert (code, mods) in display.root.grabs
     assert manager.registered == {"t": hk("ctrl+alt+shift+t")}
     assert manager.last_error("t") is None
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, mods, 10))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, mods, 10))
     assert fired == [1]
 
 
@@ -2198,7 +2200,7 @@ def test_x11_hotkey_refused_at_registration_comes_back_with_the_option(
     assert (code, mods) in display.root.grabs
     assert manager.registered == {"t": hk("ctrl+alt+meta+t")}
     assert manager.last_error("t") is None
-    manager._handle_event(key_event(hotkeys._X_KEY_PRESS, code, mods, 10))
+    manager._handle_event(key_event(hotkeys_x11._X_KEY_PRESS, code, mods, 10))
     assert fired == [1]
     # Unregistering forgets it; nothing comes back with the next change.
     assert manager.unregister("t")
@@ -2222,15 +2224,15 @@ def test_x11_super_key_taken_by_another_program_is_explained(
     assert manager.note is None
     assert display.root.grabs == set()  # the probe released what it got
     super_l = KEYSYMS["Super_L"] + 8
-    for variant in hotkeys._x11_lock_variants(manager._numlock_mask):
+    for variant in hotkeys_x11._x11_lock_variants(manager._numlock_mask):
         display.root.foreign.add((super_l, variant))  # xfsettingsd's grab
     manager._check_super_alone()
-    assert manager.note == hotkeys._SUPER_TAKEN_NOTE
+    assert manager.note == hotkeys_x11._SUPER_TAKEN_NOTE
     assert "Ctrl or Alt is pressed before Super" in manager.note
     assert display.root.grabs == set()
     # Re-checked after a keyboard mapping change: the menu was unbound.
     display.root.foreign.clear()
-    manager._handle_event(types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=1))
+    manager._handle_event(types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=1))
     assert manager.note is None
     assert display.root.grabs == set()
 
@@ -2245,7 +2247,7 @@ def test_x11_super_key_note_keeps_the_managers_own_note(
     super_r = KEYSYMS["Super_R"] + 8
     display.root.foreign.add((super_r, 0))
     manager._check_super_alone()
-    assert manager.note == f"Running under Wayland. {hotkeys._SUPER_TAKEN_NOTE}"
+    assert manager.note == f"Running under Wayland. {hotkeys_x11._SUPER_TAKEN_NOTE}"
     manager._super_taken = True
     manager._thread_teardown()
     assert manager.note == "Running under Wayland."
@@ -2259,7 +2261,7 @@ def test_x11_mapping_change_rereads_the_layout_switches(
     binding = bind_x11(manager, "p", "ctrl+shift+p", lambda: None)
     assert manager._grab_binding(binding)
     display.set_xkb_options("grp:ctrl_shift_toggle")
-    manager._handle_event(types.SimpleNamespace(type=hotkeys._X_MAPPING_NOTIFY, request=1))
+    manager._handle_event(types.SimpleNamespace(type=hotkeys_x11._X_MAPPING_NOTIFY, request=1))
     assert manager.registered == {}
     error = manager.last_error("p")
     assert error is not None
@@ -2347,7 +2349,7 @@ def test_x11_thread_with_fake_display(fake_keysyms: None) -> None:
         assert manager.register("t", "ctrl+alt+p", callback)
         code = keycode_of("p")
         assert (code, 12) in display.root.grabs
-        display.push(key_event(hotkeys._X_KEY_PRESS, code, 12 | 16, 5))
+        display.push(key_event(hotkeys_x11._X_KEY_PRESS, code, 12 | 16, 5))
         assert fired.wait(2.0)
         assert threads == ["eye-tracker-hotkeys-x11"]
         assert not manager.register("dup", "ctrl+alt+p", lambda: None)
@@ -2377,7 +2379,7 @@ def test_x11_thread_refuses_hotkeys_a_layout_switch_takes(
         assert display.root.grabs == set()
         assert manager.register("t", "ctrl+alt+meta+t", lambda: None)
         assert manager.layout_conflict("ctrl+alt+shift+t") is not None  # cached options
-        assert display.root.event_mask == hotkeys._X_PROPERTY_CHANGE_MASK
+        assert display.root.event_mask == hotkeys_x11._X_PROPERTY_CHANGE_MASK
         # The switch changes while the app runs: the thread follows it.
         assert manager.register("p", "ctrl+shift+p", lambda: None)
         display.set_xkb_options("grp:ctrl_shift_toggle")
