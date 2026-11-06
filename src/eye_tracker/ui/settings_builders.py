@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME
-from ..update.fetch import supported as update_supported
 from .hotkey_edit import HotkeyEdit, _Binding
 from .settings_pages import HOTKEY_ACTIONS, _doc
 from .util import DANGER, WARNING
@@ -85,10 +84,12 @@ def _build_general_startup(dialog: SettingsDialog, layout: QVBoxLayout) -> tuple
     return autostart, autostart_note
 
 
-def _build_general_updates(dialog: SettingsDialog, layout: QVBoxLayout) -> None:
+def _build_general_updates(
+    dialog: SettingsDialog, layout: QVBoxLayout, supported_fn: Callable[[], bool]
+) -> None:
     form = dialog._group(layout, "Updates")
     updates = dialog._check(form, "updates.check", "Look for a new version once a day")
-    supported = update_supported()
+    supported = supported_fn()
     updates.setEnabled(supported)
     form.addRow(
         dialog._hint(

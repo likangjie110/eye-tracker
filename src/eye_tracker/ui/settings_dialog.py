@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 from .. import APP_NAME, paths
 from ..command_text import cli_command_text
 from ..config import Settings
-from ..update.fetch import supported as update_supported  # noqa: F401 - re-exported seam
+from ..update.fetch import supported as update_supported
 from .hotkey_edit import (
     HotkeyEdit,
     _Binding,
@@ -313,7 +313,7 @@ class SettingsDialog(
     # -------------------------------------------------------------- pages
     def _build_general(self, layout: QVBoxLayout) -> None:
         self._autostart, self._autostart_note = _build_general_startup(self, layout)
-        _build_general_updates(self, layout)
+        _build_general_updates(self, layout, update_supported)
         self._calibration_status = _build_general_calibration(self, layout)
         _build_general_advanced(self, layout)
 
