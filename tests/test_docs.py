@@ -231,3 +231,101 @@ def test_network_claims_are_not_absolute() -> None:
 
 def test_troubleshooting_is_linked_from_the_readme() -> None:
     assert "docs/troubleshooting.md" in (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- anchors (TD-DOC-013)
+def _slugify(heading: str) -> str:
+    """GitHub's heading anchor: lowercase, punctuation dropped, spaces -> hyphens."""
+    text = heading.strip().lower()
+    text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
+    return re.sub(r"\s+", "-", text).strip("-")
+
+
+def _anchors(text: str) -> set[str]:
+    """Anchors of a Markdown page, with GitHub's ``-1``/``-2`` duplicate suffixes."""
+    anchors: set[str] = set()
+    seen: dict[str, int] = {}
+    for heading in re.findall(r"^#{1,6}\s+(.+?)\s*$", text, re.MULTILINE):
+        slug = _slugify(heading)
+        count = seen.get(slug, 0)
+        anchors.add(slug if count == 0 else f"{slug}-{count}")
+        seen[slug] = count + 1
+    return anchors
+
+
+def _anchor_targets(page: Path) -> list[tuple[Path, str]]:
+    """Local links that point into a Markdown page's anchor."""
+    found: list[tuple[Path, str]] = []
+    for target in _local_targets(page):
+        if "#" not in target:
+            continue
+        path, anchor = target.split("#", 1)
+        found.append((page.parent / path if path else page, anchor))
+    return found
+
+
+def _display(page: Path) -> str:
+    try:
+        return str(page.relative_to(ROOT))
+    except ValueError:  # a tmp_path page in the negative test
+        return page.name
+
+
+def _broken_anchors(page: Path) -> list[str]:
+    broken: list[str] = []
+    for target, anchor in _anchor_targets(page):
+        if target.suffix != ".md" or not target.is_file():
+            continue
+        if anchor not in _anchors(target.read_text(encoding="utf-8")):
+            broken.append(f"{_display(page)} -> {_display(target)}#{anchor}")
+    return broken
+
+
+def test_markdown_anchors_resolve() -> None:
+    broken = [entry for page in PAGES for entry in _broken_anchors(page)]
+    assert broken == [], f"links to missing headings: {broken}"
+
+
+def test_anchor_check_detects_a_missing_heading(tmp_path: Path) -> None:
+    page = tmp_path / "page.md"
+    another = tmp_path / "other.md"
+    another.write_text("# Present heading\n", encoding="utf-8")
+    page.write_text(
+        "# Page\n[ok](other.md#present-heading)\n[bad](other.md#gone)\n", encoding="utf-8"
+    )
+    assert _anchors("# One 2. Two\n## One 2. Two\n") == {"one-2-two", "one-2-two-1"}
+    assert _broken_anchors(page) == ["page.md -> other.md#gone"]
+
+
+# ---------------------------------------------------------------- commands (TD-DOC-013)
+_SCRIPT_PATH = re.compile(r"\bscripts/[A-Za-z0-9_./-]+\.py\b")
+
+
+def _missing_scripts(text: str) -> list[str]:
+    """``scripts/*.py`` paths a page tells the reader to run and that do not exist."""
+    return sorted({path for path in _SCRIPT_PATH.findall(text) if not (ROOT / path).is_file()})
+
+
+def test_documented_commands_exist() -> None:
+    pages = ["AGENTS.md", "CONTRIBUTING.md", "README.md"]
+    missing = [
+        f"{page}: {path}"
+        for page in pages
+        for path in _missing_scripts((ROOT / page).read_text(encoding="utf-8"))
+    ]
+    assert missing == [], f"documented commands point at missing files: {missing}"
+
+
+def test_command_check_detects_a_missing_script() -> None:
+    assert _missing_scripts("uv run python scripts/nope.py") == ["scripts/nope.py"]
+    assert _missing_scripts("uv run python scripts/check.py") == []
+
+
+# ---------------------------------------------------------------- freshness (TD-DOC-013)
+def test_changelog_lists_the_current_version() -> None:
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    init = (ROOT / "src" / "eye_tracker" / "__init__.py").read_text(encoding="utf-8")
+    current = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE)
+    assert current is not None
+    versions = re.findall(r"^##\s+\[?(\d+\.\d+\.\d+)", changelog, re.MULTILINE)
+    assert current.group(1) in versions, f"CHANGELOG.md has no {current.group(1)} section"
