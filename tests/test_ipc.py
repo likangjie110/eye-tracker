@@ -246,14 +246,15 @@ def test_server_name_uses_the_runtime_dir_on_linux(
     monkeypatch.setattr(ipc, "_MAX_SOCKET_PATH", len(full.encode()))
     assert ipc.server_name() == full
 
-    # Too long for a Unix socket path, missing or relative: Qt's default location.
+    # Too long for a Unix socket path, missing or relative: disable the channel
+    # instead of falling back to the shared /tmp name (TD-SEC-005).
     monkeypatch.setattr(ipc, "_MAX_SOCKET_PATH", len(full.encode()) - 1)
-    assert ipc.server_name() == ipc.paths.ipc_name()
+    assert ipc.server_name() == ""
     monkeypatch.setattr(ipc, "_MAX_SOCKET_PATH", 10_000)
     monkeypatch.setenv("XDG_RUNTIME_DIR", "relative/dir")
-    assert ipc.server_name() == ipc.paths.ipc_name()
+    assert ipc.server_name() == ""
     monkeypatch.delenv("XDG_RUNTIME_DIR")
-    assert ipc.server_name() == ipc.paths.ipc_name()
+    assert ipc.server_name() == ""
 
 
 def test_server_name_without_runtime_dir_uses_a_private_temp_dir(
@@ -744,3 +745,14 @@ def test_pipe_name_check_waits_for_a_lingering_pipe(monkeypatch: pytest.MonkeyPa
         assert ipc._pipe_name_taken("\\\\.\\pipe\\" + name) is True  # full names work too
     finally:
         squatter.close()
+
+
+def test_command_channel_is_disabled_without_a_private_directory(
+    app_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No private runtime dir: fail closed instead of using a shared /tmp socket."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(ipc, "_private_temp_dir", lambda: None)
+    assert ipc.server_name() == ""
+    assert ipc.send_command("toggle") is None

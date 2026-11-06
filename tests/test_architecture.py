@@ -25,6 +25,7 @@ FOUNDATION = {
     "eye_tracker.types",
     "eye_tracker.config",
     "eye_tracker.paths",
+    "eye_tracker.ipc_runtime",
     "eye_tracker.logging_setup",
     "eye_tracker.trace",
 }

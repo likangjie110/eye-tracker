@@ -34,6 +34,7 @@ Layer 2 — orchestration
   engine/controller_support.py the pointer/worker seams and vision factories the controller injects
   app.py                startup sequence, single instance, owns windows and the controller
   ipc.py                single-instance guard and local command channel
+  ipc_runtime.py        private runtime directory for the local socket
   diagnostics.py        doctor / bench aggregation
 
 Layer 3 — presentation

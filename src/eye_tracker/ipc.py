@@ -36,7 +36,6 @@ import errno
 import functools
 import logging
 import os
-import stat
 import sys
 import tempfile
 import time
@@ -48,7 +47,8 @@ from typing import Any
 from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, QTimer, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-from . import APP_SLUG, paths
+from . import paths
+from .ipc_runtime import _private_temp_dir
 
 __all__ = [
     "COMMANDS",
@@ -109,14 +109,18 @@ CommandHandler = Callable[[str], str]
 # A QCoreApplication created by this module for command-line use (kept alive).
 _owned_app: list[QCoreApplication] = []
 
+#: The "no private runtime directory" warning is useful once, not per call.
+_no_private_dir_warned: set[str] = set()
+
 
 def server_name() -> str:
     """Name (or, on Linux, full socket path) of this user's instance socket.
 
     On Linux the socket goes into ``$XDG_RUNTIME_DIR`` (private to the user and
-    cleaned at logout) or, without one, into a private ``/tmp/eye-tracker-<uid>``
-    directory, instead of the shared ``/tmp`` Qt would use, where another
-    account could create the socket first.
+    cleaned at logout) or a private ``/tmp/eye-tracker-<uid>`` directory. When no
+    private directory can be secured, the local command channel is disabled
+    (empty name) instead of falling back to Qt's shared ``/tmp`` name, where
+    another account could create the socket first (TD-SEC-005).
     """
     name = paths.ipc_name()
     if sys.platform.startswith("linux"):
@@ -125,6 +129,13 @@ def server_name() -> str:
             full = os.path.join(directory, name)
             if len(full.encode("utf-8")) <= _MAX_SOCKET_PATH:
                 return full
+        if "disabled" not in _no_private_dir_warned:
+            log.warning(
+                "Local command channel disabled: no private runtime directory "
+                "(set XDG_RUNTIME_DIR to a private directory)"
+            )
+            _no_private_dir_warned.add("disabled")
+        return ""
     return name
 
 
@@ -134,34 +145,6 @@ def _private_runtime_dir() -> str | None:
     if runtime and os.path.isabs(runtime) and os.path.isdir(runtime):
         return runtime
     return _private_temp_dir()
-
-
-def _private_temp_dir() -> str | None:
-    """``<tmp>/eye-tracker-<uid>``, created with mode 0700.
-
-    ``None`` when it cannot be created or is not safely ours: another account
-    may have created it first, which must not let it choose our socket.
-    """
-    getuid = getattr(os, "getuid", None)
-    if getuid is None:
-        return None
-    uid = getuid()
-    path = os.path.join(tempfile.gettempdir(), f"{APP_SLUG}-{uid}")
-    try:
-        os.mkdir(path, 0o700)
-    except FileExistsError:
-        pass
-    except OSError:
-        log.debug("Cannot create %s", path, exc_info=True)
-        return None
-    try:
-        info = os.lstat(path)
-    except OSError:
-        return None
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != uid or info.st_mode & 0o077:
-        log.warning("Not using %s for the instance socket: it is not a private directory", path)
-        return None
-    return path
 
 
 def send_command(

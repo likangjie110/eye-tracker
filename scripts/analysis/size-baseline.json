@@ -11,7 +11,7 @@
     "src/eye_tracker/config.py": 623,
     "src/eye_tracker/diagnostics.py": 1319,
     "src/eye_tracker/engine/controller.py": 3073,
-    "src/eye_tracker/ipc.py": 970,
+    "src/eye_tracker/ipc.py": 953,
     "src/eye_tracker/platform/hotkeys_base.py": 823,
     "src/eye_tracker/platform/hotkeys_macos.py": 722,
     "src/eye_tracker/platform/hotkeys_x11.py": 698,
