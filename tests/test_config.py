@@ -282,3 +282,51 @@ def test_split_pane_values_are_validated_like_the_others() -> None:
     assert settings.panes.tmux is False
     # Files written before the section existed get the defaults.
     assert Settings.from_dict({"switching": {"enabled": False}}).panes == Settings().panes
+
+
+def test_raw_setting_values_are_coerced_per_default_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """TD-CPLX-012: every default type keeps its conversion, clamping and warning."""
+    with caplog.at_level(logging.WARNING, logger="eye_tracker.config"):
+        settings = Settings.from_dict(
+            {
+                "general": {"start_paused": "yes", "backend": "unknown"},
+                "camera": {"device": 7, "width": 50, "height": 5000},
+                "panes": {"precision": 99.0, "min_pane_px": 240.7},
+                "privacy": {"pause_for_apps": ["zoom", "", " ", "teams"]},
+            }
+        )
+    assert settings.general.start_paused is False  # wrong type: the default
+    assert settings.general.backend == "auto"  # not one of the choices: the default
+    assert settings.camera.device == "0"  # wrong type: the default
+    assert (settings.camera.width, settings.camera.height) == (160, 1080)  # clamped
+    assert settings.panes.precision == 6.0  # clamped
+    assert settings.panes.min_pane_px == 241  # rounded to the int default's type
+    assert settings.privacy.pause_for_apps == ["zoom", "teams"]  # blank entries dropped
+    assert "expects true/false" in caplog.text
+    assert "expects a string" in caplog.text
+    assert "below minimum" in caplog.text
+    assert "above maximum" in caplog.text
+    assert "not one of" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="eye_tracker.config"):
+        odd = Settings.from_dict(
+            {
+                "camera": {"width": True},  # bool is not a number
+                "panes": {"precision": float("nan")},  # the number must be finite
+                "privacy": {"pause_for_apps": "obs"},  # not a list
+            }
+        )
+    assert (odd.camera.width, odd.panes.precision) == (640, 2.5)  # the defaults
+    assert odd.privacy.pause_for_apps == []
+    assert "expects a number" in caplog.text
+    assert "must be finite" in caplog.text
+    assert "expects a list of strings" in caplog.text
+
+    # A default of an unsupported type takes the raw value unchanged (both the
+    # coercer table and the numeric path fall through).
+    from eye_tracker import config as config_module
+
+    assert config_module._coerce("x", {"kept": 1}, None, {}) == {"kept": 1}

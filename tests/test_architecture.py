@@ -24,6 +24,7 @@ FOUNDATION = {
     "eye_tracker.command_text",
     "eye_tracker.types",
     "eye_tracker.config",
+    "eye_tracker.config_coerce",
     "eye_tracker.paths",
     "eye_tracker.ipc_runtime",
     "eye_tracker.reading",
@@ -45,6 +46,7 @@ COMPOSITION = {
     "eye_tracker.app_windows",
     "eye_tracker.ipc",
     "eye_tracker.diagnostics",
+    "eye_tracker.diagnostics_rules",
 }
 ENTRY = {"eye_tracker.cli", "eye_tracker.__main__"}
 

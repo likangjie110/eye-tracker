@@ -12,13 +12,14 @@ import contextlib
 import copy
 import json
 import logging
-import math
 import os
 import sys
 import tempfile
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
+
+from .config_coerce import _coerce
 
 log = logging.getLogger(__name__)
 
@@ -583,41 +584,3 @@ def _apply(target: Any, data: dict[str, Any], prefix: str) -> None:
             continue
         coerced = _coerce(key, value, _default_of(f), f.metadata)
         setattr(target, f.name, coerced)
-
-
-def _coerce(key: str, value: Any, default: Any, meta: Any) -> Any:
-    lo, hi, choices = meta.get("lo"), meta.get("hi"), meta.get("choices")
-    if isinstance(default, bool):
-        if isinstance(value, bool):
-            return value
-        log.warning("Setting %s expects true/false; using default %r", key, default)
-        return default
-    if isinstance(default, (int, float)):
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            log.warning("Setting %s expects a number; using default %r", key, default)
-            return default
-        num: float = float(value)
-        if math.isnan(num) or math.isinf(num):
-            log.warning("Setting %s must be finite; using default %r", key, default)
-            return default
-        if lo is not None and num < lo:
-            log.warning("Setting %s=%r below minimum %r; clamped", key, value, lo)
-            num = float(lo)
-        if hi is not None and num > hi:
-            log.warning("Setting %s=%r above maximum %r; clamped", key, value, hi)
-            num = float(hi)
-        return round(num) if isinstance(default, int) else num
-    if isinstance(default, str):
-        if not isinstance(value, str):
-            log.warning("Setting %s expects a string; using default %r", key, default)
-            return default
-        if choices and value not in choices:
-            log.warning("Setting %s=%r not one of %s; using default", key, value, choices)
-            return default
-        return value
-    if isinstance(default, list):
-        if isinstance(value, list) and all(isinstance(v, str) for v in value):
-            return [v for v in value if v.strip()]
-        log.warning("Setting %s expects a list of strings; using default", key)
-        return list(default)
-    return value

@@ -38,6 +38,13 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from . import APP_NAME, __version__, paths
 from .command_text import FROZEN_CLI_NAME, cli_command, format_command
 from .config import Settings, describe_settings
+from .diagnostics_rules import (
+    _UNWANTED_DISTRIBUTIONS,
+    _instance_running,
+)
+from .diagnostics_rules import (
+    problems as _rule_problems,
+)
 from .platform.base import PlatformServices
 from .types import Monitor, Rect, layout_signature, virtual_bounds
 
@@ -69,12 +76,6 @@ _DISTRIBUTIONS = {
     "platformdirs": ("platformdirs",),
 }
 
-#: Distributions Eye Tracker never uses that are a problem when installed next to
-#: it, with the reason. The MediaPipe runtime is not needed (its models run in
-#: OpenCV) and ships a usage logger (telemetry), which the offline rule excludes.
-_UNWANTED_DISTRIBUTIONS: dict[str, str] = {
-    "mediapipe": "Eye Tracker does not use it, and it contains a usage logger (telemetry)",
-}
 
 #: Things worth knowing on Linux that are not problems (shown under "OS integration").
 _LINUX_CAMERA_NOTE = (
@@ -802,94 +803,13 @@ def _calibration_summary(report: dict[str, Any]) -> str | None:
 
 def _problems(report: dict[str, Any]) -> list[str]:
     """Plain-language list of things that stop features from working."""
-    problems: list[str] = []
-    for key, section in report.items():
-        if isinstance(section, dict) and "error" in section and len(section) == 1:
-            problems.append(f"Could not collect {key} information: {section['error']}")
+    return [*_rule_problems(report), *_calibration_problems(report)]
 
-    libraries = report.get("libraries") or {}
-    for name, version in (libraries.get("unwanted") or {}).items():
-        why = _UNWANTED_DISTRIBUTIONS.get(name, "Eye Tracker does not use it")
-        problems.append(
-            f"The {name} package ({version}) is installed in this Python environment. "
-            f"{why}; uninstall it (pip uninstall {name})."
-        )
 
-    backends = report.get("backends") or {}
-    if backends.get("available") == []:
-        problems.append(
-            "No vision backend is available (it needs OpenCV 4.10 or newer with its DNN "
-            "module, and the bundled model files)."
-        )
-    for filename, model in (backends.get("models") or {}).items():
-        users = ", ".join(model.get("used_by") or []) or "vision"
-        if not model.get("present"):
-            problems.append(f"The model file {filename} ({users} backend) is missing.")
-        elif model.get("sha256_ok") is False:
-            problems.append(f"The model file {filename} ({users} backend) is damaged (checksum).")
-    if backends.get("active_error"):
-        problems.append(str(backends["active_error"]))
-
-    monitors = report.get("monitors") or {}
-    if monitors.get("count") == 1 and not monitors.get("virtual"):
-        problems.append(
-            "Only one monitor detected: switching needs two or more "
-            "(walk-away and privacy features still work)."
-        )
-
-    cameras = report.get("cameras") or {}
-    if cameras.get("probed") and cameras.get("devices") == []:
-        hint = " (it may be in use by Eye Tracker itself)" if _instance_running(report) else ""
-        problems.append(f"No camera delivered a picture{hint}.")
-
-    platform_info = report.get("platform") or {}
-    permissions = platform_info.get("permissions") or {}
-    if permissions.get("camera") is False:
-        problems.append("Camera access is blocked by the operating system's privacy settings.")
-    if platform_info.get("accessibility") == "stale":
-        problems.append(
-            "Accessibility permission was granted to an earlier version, so keyboard focus "
-            "cannot follow your gaze: in System Settings > Privacy & Security > "
-            "Accessibility remove Eye Tracker with '-' and add it again."
-        )
-    elif permissions.get("accessibility") is False:
-        problems.append(
-            "Accessibility permission is missing: keyboard focus cannot follow your gaze."
-        )
-    capabilities = platform_info.get("capabilities") or {}
-    if capabilities and not capabilities.get("cursor", True):
-        problems.append(
-            "This session does not allow moving the cursor. On Wayland, sway and Hyprland "
-            "work directly; elsewhere install ydotool 1.x and run ydotoold."
-        )
-    if capabilities and not capabilities.get("lock", True):
-        problems.append("Locking the screen is not supported here.")
-
-    hotkeys = report.get("hotkeys") or {}
-    if hotkeys.get("enabled") and hotkeys.get("note"):
-        problems.append(f"Global hotkeys: {hotkeys['note']}")
-    for name, error in (hotkeys.get("invalid") or {}).items():
-        problems.append(f"Hotkey {name} is invalid: {error}")
-    if hotkeys.get("enabled"):
-        for name, conflict in (hotkeys.get("layout_conflicts") or {}).items():
-            problems.append(f"Hotkey {name} cannot be used: {conflict}.")
-        registration = hotkeys.get("registration")
-        for name, result in (registration if isinstance(registration, dict) else {}).items():
-            reason = str(result).removeprefix("not registered: ")
-            if reason != result and name not in (hotkeys.get("layout_conflicts") or {}):
-                problems.append(f"Hotkey {name} could not be registered: {reason}.")
-
-    autostart_info = report.get("autostart") or {}
-    if autostart_info.get("status") == "stale":
-        problems.append(
-            "Start at login points to a copy of Eye Tracker that no longer exists; "
-            "turn it off and on again."
-        )
-
+def _calibration_problems(report: dict[str, Any]) -> list[str]:
+    """A calibration that is missing (where switching needs one), damaged or outdated."""
     settings = report.get("settings") or {}
-    if settings.get("valid") is False:
-        problems.append("The settings file is not valid JSON; defaults are used.")
-
+    monitors = report.get("monitors") or {}
     calibration = report.get("calibration") or {}
     # A calibration only serves monitor switching: none is missing with switching
     # turned off, or with one real monitor (reported above already).
@@ -900,18 +820,15 @@ def _problems(report: dict[str, Any]) -> list[str]:
         if switching_wanted and not one_monitor:
             # Spelled as this copy is run: release packages have no "eye-tracker" command.
             command = _redacted_command(cli_command("calibrate"))
-            problems.append(
+            return [
                 f"Not calibrated yet: choose 'Calibrate...' in the tray menu or run '{command}'."
-            )
-    elif calibration.get("valid") is False:
-        problems.append("The calibration file is damaged; please recalibrate.")
-    elif calibration.get("compatible") is False:
-        problems.append(f"The calibration no longer applies ({calibration.get('reason')}).")
-    return problems
-
-
-def _instance_running(report: dict[str, Any]) -> bool:
-    return bool((report.get("app") or {}).get("instance_running"))
+            ]
+        return []
+    if calibration.get("valid") is False:
+        return ["The calibration file is damaged; please recalibrate."]
+    if calibration.get("compatible") is False:
+        return [f"The calibration no longer applies ({calibration.get('reason')})."]
+    return []
 
 
 # ------------------------------------------------------------------ formatting
