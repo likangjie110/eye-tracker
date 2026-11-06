@@ -124,11 +124,18 @@ from ..types import (
     TrackingState,
     WindowRef,
     WorkerStats,
-    layout_signature,
     monitor_at,
     nearest_monitor,
 )
+from .calibration_select import calibration_useful, match_profile, with_camera_identity
 from .camera_yield import YieldInputs, should_yield
+from .controller_policy import (
+    TICK_IDLE_MS,
+    derive_state,
+    max_faces,
+    may_interrupt,
+    tick_interval,
+)
 from .controller_support import (
     CursorLike,
     QtCursor,
@@ -191,10 +198,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-#: Housekeeping tick while tracking: the resolution of mouse/typing detection.
-TICK_ACTIVE_MS = 100
-#: Housekeeping tick in every other state.
-TICK_IDLE_MS = 500
 #: How often the focused window is sampled (remembered per monitor).
 WINDOW_POLL_S = 0.5
 #: How often the session lock state is checked.
@@ -2405,32 +2408,25 @@ class Controller(QObject):
 
     # ===================================================================== state
     def _derive_state(self) -> TrackingState:
-        if not self._started:
-            return TrackingState.STARTING
-        if self._privacy:
-            return TrackingState.PRIVACY
-        if self._session_locked and self._settings.privacy.pause_when_locked:
-            return TrackingState.LOCKED
-        if self._calibrating:
-            return TrackingState.CALIBRATING
-        if self._paused:
-            return TrackingState.PAUSED
-        if self._yield_reason:
-            return TrackingState.YIELDED
-        if self._away:
-            return TrackingState.AWAY
-        if self._camera_error:
-            return TrackingState.CAMERA_ERROR
-        if self._model is None and self._calibration_useful():
-            return TrackingState.NEEDS_CALIBRATION
-        return TrackingState.TRACKING
+        return derive_state(
+            started=self._started,
+            privacy=self._privacy,
+            session_locked=self._session_locked,
+            pause_when_locked=self._settings.privacy.pause_when_locked,
+            calibrating=self._calibrating,
+            paused=self._paused,
+            yield_reason=self._yield_reason,
+            away=self._away,
+            camera_error=self._camera_error,
+            has_model=self._model is not None,
+            calibration_useful=self._calibration_useful(),
+        )
 
     def _calibration_useful(self) -> bool:
-        """Whether a calibration would change anything: it only serves monitor
-        switching, so not with one monitor or with switching turned off. Then
-        presence, privacy mode and the shoulder guard are all there is, and the
-        state must not ask for a calibration (warning badge, prompts)."""
-        return len(self._monitors) >= 2 and self._settings.switching.enabled
+        return calibration_useful(
+            monitor_count=len(self._monitors),
+            switching_enabled=self._settings.switching.enabled,
+        )
 
     def _update_state(self) -> None:
         new = self._derive_state()
@@ -2535,10 +2531,10 @@ class Controller(QObject):
         worker.set_interval(interval)
 
     def _tick_interval(self) -> int:
-        fast = (
-            self._state is TrackingState.TRACKING or self._presence.state is PresenceState.WARNING
+        return tick_interval(
+            tracking=self._state is TrackingState.TRACKING,
+            presence_warning=self._presence.state is PresenceState.WARNING,
         )
-        return TICK_ACTIVE_MS if fast else TICK_IDLE_MS
 
     def _update_timer(self) -> None:
         interval = self._tick_interval()
@@ -2554,7 +2550,7 @@ class Controller(QObject):
         self._worker.set_motion_gate(enabled, perf.motion_threshold)
 
     def _max_faces(self) -> int:
-        return 2 if self._settings.privacy.shoulder_guard else 1
+        return max_faces(shoulder_guard=self._settings.privacy.shoulder_guard)
 
     def _set_background_activity(self, active: bool) -> None:
         """Keep timers unthrottled while tracking (macOS App Nap); a no-op elsewhere."""
@@ -2629,13 +2625,11 @@ class Controller(QObject):
             self._calibration.implicit_samples = self._learner.samples
 
     def _with_camera_identity(self, data: CalibrationData) -> CalibrationData:
-        """``data`` with the camera device and frame size filled in where unknown."""
-        changes: dict[str, Any] = {}
-        if not data.camera.strip():
-            changes["camera"] = str(self._settings.camera.device)
-        if _known_size(data.frame_size) is None and self._frame_size is not None:
-            changes["frame_size"] = self._frame_size
-        return dataclasses.replace(data, **changes) if changes else data
+        return with_camera_identity(
+            data,
+            camera_device=str(self._settings.camera.device),
+            frame_size=self._frame_size,
+        )
 
     def _save_calibration(self, data: CalibrationData, *, quiet: bool) -> bool:
         """Store ``data`` as the most recently used profile and write the file."""
@@ -2690,42 +2684,14 @@ class Controller(QObject):
                 self._announce_calibration(reason)
 
     def _match_profile(self) -> tuple[CalibrationData | None, str]:
-        """The profile to use for the current setup, or ``(None, reason)``."""
-        current = self._calibration
-        info = self._current_backend()
-        camera = str(self._settings.camera.device)
-        frame_size = self._frame_size
-        if info is not None:
-            name, version = info
-            reason = "not calibrated yet"
-            if current is not None:
-                ok, reason = current.is_compatible(
-                    name, version, self._monitors, camera=camera, frame_size=frame_size
-                )
-                if ok:
-                    return current, ""
-            data, why = self._library.match(
-                name, version, self._monitors, camera=camera, frame_size=frame_size
-            )
-            if data is not None:
-                return data, ""
-            return None, reason if current is not None else why
-        # Backend unknown (none installed?): the layout is all that can be checked.
-        signature = layout_signature(self._monitors)
-
-        def fits(p: CalibrationData) -> bool:
-            return p.model.is_fitted and p.layout_signature == signature
-
-        if current is not None and fits(current):
-            return current, ""
-        other = next((p for p in self._library if fits(p)), None)
-        if other is not None:
-            return other, ""
-        if current is None:
-            return None, "not calibrated yet"
-        if not current.model.is_fitted:
-            return None, "the calibration has no fitted model"
-        return None, "the monitor layout changed"
+        return match_profile(
+            self._library,
+            self._calibration,
+            backend_info=self._current_backend(),
+            camera=str(self._settings.camera.device),
+            frame_size=self._frame_size,
+            monitors=self._monitors,
+        )
 
     def _invalidate_calibration(self, reason: str) -> None:
         was_usable = self._model is not None
@@ -2784,18 +2750,11 @@ class Controller(QObject):
         self.calibration_required.emit(reason)
 
     def _may_interrupt(self) -> bool:
-        """Whether a calibration prompt is appropriate right now.
-
-        Not while the user is away or displays are off (monitors drop out during
-        display sleep and come back unchanged), and not where a calibration would
-        not change anything (one monitor, or switching turned off; a pending
-        announcement is delivered once that changes).
-        """
-        return (
-            self._calibration_useful()
-            and not self._calibrating
-            and not self._displays_off_only
-            and self._state not in (TrackingState.AWAY, TrackingState.LOCKED, TrackingState.PRIVACY)
+        return may_interrupt(
+            calibration_useful=self._calibration_useful(),
+            calibrating=self._calibrating,
+            displays_off_only=self._displays_off_only,
+            state=self._state,
         )
 
     # =================================================================== backend
