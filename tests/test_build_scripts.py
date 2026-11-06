@@ -1543,6 +1543,10 @@ def test_python_support_matches_the_ci_matrix() -> None:
     assert classified == tested
     assert min(classified, key=_version_tuple) == f"{floor[0]}.{floor[1]}"
     assert all(floor <= _version_tuple(version) < ceiling for version in tested)
+    # The upper bound must stop at the next minor after the newest tested version:
+    # a Python we do not test is not claimed as supported (TD-CI-012).
+    newest = max(tested, key=_version_tuple)
+    assert ceiling == (_version_tuple(newest)[0], _version_tuple(newest)[1] + 1)
     # The lint job analyses the tested default; mypy is configured for the same one.
     lint = _jobs(_workflow("ci.yml"))["lint"]
     [lint_python] = re.findall(r'^          python-version: "(\d+\.\d+)"$', lint, re.MULTILINE)
