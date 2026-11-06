@@ -48,7 +48,7 @@ really wants to work on the reading monitor gets there after a longer look
 (or at once by moving the mouse). The reading monitor is forgotten when the
 cursor changes monitor, when typing has paused for ``reading_grace_s`` or when
 the gaze has not been on it for :data:`READING_FORGET_S`. Switches to any other
-monitor are unaffected. The rule itself is :class:`~.reading.ReadingTracker`,
+monitor are unaffected. The rule itself is :class:`~eye_tracker.reading.ReadingTracker`,
 which the split-pane decider shares.
 
 The decider is pure logic: time is injected and it has no side effects, which
@@ -63,14 +63,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..types import Monitor
-from .reading import (
+from ..reading import (
     READING_EVIDENCE_S,
     READING_FORGET_S,
     READING_MAX_GAP_S,
     READING_RETURN_S,
     ReadingTracker,
 )
+from ..types import Monitor
 
 if TYPE_CHECKING:
     from ..config import SwitchingSettings

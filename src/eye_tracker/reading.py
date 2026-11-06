@@ -1,5 +1,8 @@
 """Recognise what the user *reads* while typing somewhere else.
 
+Moved out of ``engine/`` so both the monitor decider and the pane decider can use it
+without `panes -> engine` (TD-ARCH-001).
+
 Copying from a document into an editor means looking at the source while the
 keystrokes go elsewhere. A decider that moves the keyboard focus to where the
 user looks must not take those looks for a wish to work there.

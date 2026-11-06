@@ -1,4 +1,4 @@
-"""Tests for the shared reading rule (engine/reading.py) with non-monitor keys.
+"""Tests for the shared reading rule (reading.py) with non-monitor keys.
 
 The monitor decider's use of it is covered by tests/test_decision.py.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 
 from eye_tracker.engine import decision
-from eye_tracker.engine.reading import (
+from eye_tracker.reading import (
     READING_EVIDENCE_S,
     READING_FORGET_S,
     READING_RETURN_S,

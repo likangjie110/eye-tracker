@@ -20,7 +20,8 @@ Layer 0 — foundation (no project imports, or only other Layer 0 modules)
 
 Layer 1 — domain logic and adapters
   gaze/             gaze model, filters, calibration, calibration store, learning
-  engine/           pure decision logic: decision, guard, presence, reading, scheduler,
+  reading.py        the shared "reading target" rule (engine + panes)
+  engine/           pure decision logic: decision, guard, presence, scheduler,
                     input_state, window_memory, camera_yield, state derivation and
                     calibration selection (controller_policy.py, calibration_select.py,
                     hotkey_setup.py), plus the controller seams
@@ -55,7 +56,8 @@ above it.**
 
 - **R1** Layer 0 imports only the standard library, numpy (`types.py`), and other Layer 0 modules.
 - **R2** Layer 1 imports Layer 0 and its own package. `gaze/`, the pure `engine/` modules and
-  `panes/decider.py` import no Qt and no OpenCV; `vision/` is the OpenCV adapter; `update/` is the
+  `panes/decider.py`, `reading.py` import no Qt and no OpenCV; `vision/` is the OpenCV adapter;
+  `update/` is the
   network adapter.
 - **R3** Layer 2 may import Layers 0 and 1. `app.py` also owns the windows, so it imports `ui/`;
   it is the composition root and the one place where "everything" is allowed.
@@ -72,7 +74,6 @@ pull request which violates them.
 | Exception | Why it exists today | Tracker |
 |---|---|---|
 | `engine/controller.py` and `controller_support.py` import PySide6, `panes/`, `platform/`, `vision/` | they are the orchestrator seams, and `engine/` is where they grew | TD-CPLX-001, TD-ARCH-001 |
-| `panes/decider.py` → `engine/reading.py` | reuse of a pure rule | TD-ARCH-001 |
 | `diagnostics.py` → `platform/hotkeys.py`, `engine/scheduler.py` | a diagnostic report deliberately aggregates every layer | TD-ARCH-002 |
 | `ui/settings_status.py` → `diagnostics.py` (lazy import for the doctor text) | the dialog shows the system report | TD-ARCH-002 |
 | `update/fetch.py` ↔ `update/winhttp.py` (lazy import) | transport protocol lives in `fetch.py` | TD-ARCH-006 |

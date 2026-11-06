@@ -25,7 +25,7 @@ axis (:func:`eye_tracker.gaze.store.axis_error`). Filters, in order:
    must span the whole dwell. A few stray samples do not restart it; a long gap
    between updates does.
 8. **Guards** - recent mouse use, recent typing (longer toward a *reading
-   pane*, see :mod:`eye_tracker.engine.reading`), the cooldown after the last
+   pane*, see :mod:`eye_tracker.reading`), the cooldown after the last
    pane switch, and a grace after the focused pane changed without us (the
    user switched panes by hand: their choice wins for a while).
 
@@ -41,7 +41,7 @@ from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ..engine.reading import READING_MAX_GAP_S, ReadingTracker
+from ..reading import READING_MAX_GAP_S, ReadingTracker
 from ..types import Rect
 from .types import Pane, PaneSnapshot
 

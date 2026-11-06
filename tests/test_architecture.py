@@ -26,6 +26,7 @@ FOUNDATION = {
     "eye_tracker.config",
     "eye_tracker.paths",
     "eye_tracker.ipc_runtime",
+    "eye_tracker.reading",
     "eye_tracker.logging_setup",
     "eye_tracker.trace",
 }
@@ -75,6 +76,7 @@ ALLOWED_CYCLES: list[frozenset[str]] = [
 PURE_MODULES = (
     "eye_tracker.gaze.",
     "eye_tracker.engine.",
+    "eye_tracker.reading.",
 )
 PURE_EXCEPTIONS = {"eye_tracker.engine.controller", "eye_tracker.engine.controller_support"}
 
