@@ -701,4 +701,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 债务清理 · P2 批量 | TD-CPLX-008/012、TD-TEST-006/009、TD-CI-019/020、TD-SEC-009 关闭；mypy 扩展 tests、workflow lint、确定性时序测试与 FakeController 契约 | 待提交 | 见各任务测试证据 |
 | 2026-11-06 | 债务清理 · 安全/支持矩阵 | TD-SEC-011 关闭（前台授权限定 PID）；TD-CI-012 关闭（Python <3.14 与 CI 一致） | 待提交 | ipc/windows/build 测试全绿 |
 | 2026-11-06 | 债务清理 · 复杂度/CI | TD-CPLX-011/010 关闭（from_dict、parse_face_geometry 拆 helper）；TD-TEST-003 安装 Inno 到 Windows CI | 待提交 | model/face_geometry 测试全绿；building 测试 188 passed |
+| 2026-11-06 | 债务清理 · CI 实测 | TD-TEST-003 关闭：CI run 42199983981 Windows job 安装 Inno，installer 测试实测运行并通过 | 待提交 | Windows 3175 passed / 32 skipped |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
