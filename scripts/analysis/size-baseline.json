@@ -20,10 +20,9 @@
     "src/eye_tracker/platform/win_uia.py": 750,
     "src/eye_tracker/platform/windows_api.py": 839,
     "src/eye_tracker/ui/calibration_window.py": 997,
-    "src/eye_tracker/ui/settings_dialog.py": 1520,
+    "src/eye_tracker/ui/settings_dialog.py": 1013,
     "src/eye_tracker/ui/tray.py": 702,
-    "src/eye_tracker/vision/backends/facemesh_backend.py": 954,
-    "src/eye_tracker/vision/worker.py": 776
+    "src/eye_tracker/vision/backends/facemesh_backend.py": 619
   },
   "functions": {
     "src/eye_tracker/cli.py::build_parser": 114,
@@ -79,10 +78,10 @@
     "src/eye_tracker/platform/windows_platform.py::WindowsPlatform": 479,
     "src/eye_tracker/ui/calibration_surface.py::_Surface": 315,
     "src/eye_tracker/ui/calibration_window.py::CalibrationWindow": 849,
-    "src/eye_tracker/ui/settings_dialog.py::SettingsDialog": 1351,
+    "src/eye_tracker/ui/settings_dialog.py::SettingsDialog": 885,
     "src/eye_tracker/ui/tray.py::TrayIcon": 581,
     "src/eye_tracker/ui/wizard.py::FirstRunWizard": 491,
-    "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend": 692,
-    "src/eye_tracker/vision/worker.py::VisionWorker": 693
+    "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend": 441,
+    "src/eye_tracker/vision/worker.py::VisionWorker": 508
   }
 }

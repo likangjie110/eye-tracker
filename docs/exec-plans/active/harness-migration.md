@@ -686,4 +686,7 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 债务清理 · 安全/隐私 | TD-SEC-008/013/014 关闭：doctor 全路径脱敏、build_site 输出目录保护、隐私文档披露相机占用检查 | 待提交 | 58 相关测试通过；隐私门 OK |
 | 2026-11-06 | 债务清理 · 版本 | TD-CI-004 关闭：版本解析统一到 `scripts/version.py`（AST + numeric + tag 校验），CI/AppImage 改用，14 个新用例 | 待提交 | YAML/bash 语法 OK；版本脚本测试全绿 |
 | 2026-11-06 | 债务清理 · P1 文件拆分 | TD-CPLX-006 收窄（facemesh 1454→954 + 3 模块）；TD-CPLX-007 收窄（app 1317→926 + app_startup 594） | 待提交 | 行为不变（断言未改，仅 seam）；类本身待按方法拆 |
+| 2026-11-06 | 债务清理 · P1/P2 | TD-CPLX-015 关闭（VisionWorker 693→508 + lifecycle mixin）；TD-PERF-002 关闭（下载 deadline/最低速率） | 待提交 | 62 worker 测试全绿；43 fetch 测试全绿 |
+| 2026-11-06 | 债务清理 · 安全 | TD-SEC-012 关闭：FFmpeg 本地容器限制 protocol_whitelist，m3u8 探针无网络请求 | 待提交 | 94 camera 测试全绿 |
+| 2026-11-06 | 债务清理 · P1 类拆分 | TD-CPLX-002（SettingsDialog 1351→885 + settings_pages 595）/006（类 692→441 + landmarks/output mixins）大幅收窄；015 已关闭 | 待提交 | UI/facemesh/architecture 测试全绿；无新 size 违规 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
