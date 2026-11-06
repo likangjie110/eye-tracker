@@ -51,7 +51,7 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-CPLX-001 | `engine/controller.py` 超大：单类 2,845 行 / 155 方法 | `engine/controller.py:585` | P1 | 文件 3,429 行；`Controller.__init__` 206 行（`:659`）；`start` 75 行（`:867`）；`apply_settings` 63 行（`:1237`） | 先补特征测试；按生命周期抽取协作对象（相机/会话、热键、窗口记忆、更新），controller 只保留编排 | 无（重构） | B1；controller 行数下降 ≥30%，测试全绿 | 未开始 |
+| TD-CPLX-001 | `engine/controller.py` 超大：单类 2,845 行 / 155 方法 | `engine/controller.py:585` | P1 | 文件 3,429 行；`Controller.__init__` 206 行（`:659`）；`start` 75 行（`:867`）；`apply_settings` 63 行（`:1237`） | 先补特征测试；按生命周期抽取协作对象（相机/会话、热键、窗口记忆、更新），controller 只保留编排 | 无（重构） | B1；controller 行数下降 ≥30%，测试全绿 | 处理中（B1：controller.py 3418→3165；Controller 类 3018 行待拆） |
 | TD-CPLX-002 | `ui/settings_dialog.py` 超大：单类 1,351 行 / 69 方法 | `ui/settings_dialog.py:669` | P1 | 文件 2,029 行；`SettingsDialog` 69 方法；UI 测试仅 ~29 例 | 按页签拆子组件（General/Camera/Privacy/Hotkeys…），状态读写集中到 presenter | 无 | B3；类行数 <600，offscreen 测试全绿 | 未开始 |
 | TD-CPLX-003 | `platform/hotkeys.py` 2,740 行装三平台实现 | `platform/hotkeys.py`（`_Carbon:1499`、`X11HotkeyManager:2257`、Windows 类 ~955） | P1 | 文件 2,740 行；`register` 62 行 / 17 决策点（`:498`）；Windows `__init__` 81 行（`:955`） | 拆 `hotkeys/{windows,macos,x11,base}.py`，公共解析/格式化留一处 | 无 | B2；三平台测试全绿；文件 <600 行 | 未开始 |
 | TD-CPLX-004 | `platform/linux.py` 超大：`LinuxPlatform` 945 行 / 53 方法 | `platform/linux.py:1580` | P1 | 文件 2,528 行；`_EwmhClient` 273 行 / 24 方法（`:707`）；`capabilities` 33 行 / 18 决策点（`:1708`） | 拆 X11 窗口管理 / 光标 / DPMS / 热键后端；Wayland 分支单独文件 | 无 | B2；Linux 测试全绿 | 未开始 |

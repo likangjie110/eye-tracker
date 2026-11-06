@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 2 个重构步骤）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 3 个重构步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -444,7 +444,12 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 - **步骤 2（away-action 策略下沉）** `b910510a`：`effective_away_action` / `DISRUPTIVE_AWAY_ACTIONS`
   移入纯逻辑 `engine/presence.py`，UI 不再依赖 controller；补 2 个策略测试。CI run
   [42155431560](https://github.com/likangjie110/eye-tracker/actions/runs/42155431560) 全绿。
-- 剩余 B1：`controller.py` 按职责抽取（相机/会话生命周期等，需先补特征测试），
+- **步骤 3（controller 支撑层拆分）** `18ada68`：`CursorLike` / `WorkerLike` / `QtCursor` /
+  `qt_monitors` / 工厂与纯 helper 移入 `engine/controller_support.py`；`controller.py`
+  **3418 → 3165 行**，测试仍可通过 controller 访问这些 seam。新增
+  `tests/test_controller_support.py`（15 个直接特征测试）。CI run
+  [42156071025](https://github.com/likangjie110/eye-tracker/actions/runs/42156071025) 全绿。
+- 剩余 B1：`Controller` 类本身（2,845 行）按协作对象拆分（相机/会话、热键、校准流程），
   `app.py` / `ipc.py` 的窗口与单实例职责整理。作为下一轮继续。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
@@ -529,4 +534,5 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 3 | GitHub CI 实跑验证：lint + 5 个测试矩阵 job 全绿 | run `42154283481` | 新增 lint step 在 CI 真实执行；三平台测试通过 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 1：`command_text.py` 承接 CLI 文案，app/cli 环消失，结构测试环基线收缩 | `f7b8a79` | 行为不变：仅 import 路径与文件归属变化；产物字符串逐字节一致（test_cli 未改断言）；CI run `42155164787` 绿 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 2：`effective_away_action` 移入 `engine/presence.py`，UI 不再依赖 controller；补 2 个纯策略测试 | `b910510a` | 行为不变；CI run `42155431560` 绿 |
+| 2026-11-06 | 阶段 4 · B1 | 步骤 3：controller 支撑层（指针/worker 协议、QtCursor、monitor 重认、视觉工厂）移入 `controller_support.py`；新增 15 个直接特征测试 | `18ada68` | 行为不变（seam 名从 controller 仍可 import）；controller.py 3418→3165；CI run `42156071025` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
