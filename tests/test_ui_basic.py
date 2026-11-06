@@ -33,6 +33,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
 from eye_tracker import __version__
 from eye_tracker.config import Settings
+from eye_tracker.platform import get_platform
 from eye_tracker.platform.base import PlatformServices
 from eye_tracker.platform.hotkeys import Hotkey, HotkeyManager, format_hotkey, parse_hotkey
 from eye_tracker.types import (
@@ -108,6 +109,8 @@ class FakeController(QObject):
         #: The ``owner`` of every set_preview call.
         self.preview_owners: list[object | None] = []
         self.hotkey_manager: FakeHotkeyManager | None = None
+        # The process platform, like the UI's fallback when a controller has none.
+        self.platform = get_platform()
         self.yield_reason = ""
         self.calibration_reason = ""
         self._monitors = list(monitors)
@@ -152,6 +155,27 @@ class FakeController(QObject):
         self.calls.append(("apply_settings", settings))
         self.settings = settings.copy()
         self.settings_changed.emit(self.settings)
+
+    def calibration(self) -> object | None:
+        """No calibration is loaded in the fake; the UI treats it as unusable."""
+        return None
+
+    def gaze_feature_indices(self) -> None:
+        return None
+
+    def begin_calibration(self) -> None:
+        self.calls.append(("begin_calibration", None))
+
+    def finish_calibration(self, data: object | None) -> None:
+        self.calls.append(("finish_calibration", data))
+
+    def suspend_hotkeys(self, suspended: bool) -> None:
+        self.calls.append(("suspend_hotkeys", suspended))
+
+    @property
+    def is_calibrated(self) -> bool:
+        """The fake's default state is tracking, so it is calibrated."""
+        return True
 
 
 class FakeAutostart:
@@ -1139,7 +1163,7 @@ def test_countdown_offers_only_what_can_cancel_it(
     """Regression (r2-docs-04): on Wayland outside GNOME keyboard and mouse use is not
     observed, so only looking at the camera cancels the countdown there."""
     platform = _Platform(input_idle=False)
-    controller.platform = platform  # type: ignore[attr-defined]
+    controller.platform = platform  # type: ignore[assignment]  # fake platform
     toast = CountdownToast(controller, clock=FakeClock())
     cleanup.append(toast)
     controller.away_warning.emit(5.0)
@@ -1148,7 +1172,7 @@ def test_countdown_offers_only_what_can_cancel_it(
     assert platform.calls == 1  # asked once, not on every repaint
 
     supported = _Platform(input_idle=True)
-    controller.platform = supported  # type: ignore[attr-defined]
+    controller.platform = supported  # type: ignore[assignment]  # fake platform
     toast = CountdownToast(controller, clock=FakeClock())
     cleanup.append(toast)
     assert toast.hint_text() == "Move the mouse or look at the camera to cancel"

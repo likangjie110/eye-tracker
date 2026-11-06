@@ -747,6 +747,12 @@ def _tray_messages(h: Harness, monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _wait_for(qapp: QApplication, condition: Callable[[], bool], timeout: float = 3.0) -> bool:
+    """Drive the event loop until ``condition`` holds (bounded real-time wait).
+
+    The delays under test are scheduled with real ``QTimer``s (startup mute, permission-notice
+    grace), so there is no event that signals their expiry; the loop waits in real time, bounded
+    by ``timeout``, and only sleeps between event-loop turns.
+    """
     deadline = time.monotonic() + timeout
     while not condition() and time.monotonic() < deadline:
         qapp.processEvents()

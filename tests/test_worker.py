@@ -165,11 +165,16 @@ def strictly_increasing(values: list[float]) -> bool:
 
 
 def wait_until(predicate: Callable[[], bool], timeout: float = TIMEOUT) -> bool:
+    """Poll ``predicate`` until it holds or ``timeout`` passes.
+
+    A bounded poll on purpose: the state transitions happen on the worker thread and there is no
+    event to wait on, so polling avoids a fixed "long enough" sleep.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
             return True
-        time.sleep(0.002)
+        time.sleep(0.002)  # bounded poll for cross-thread state without a shared event
     return predicate()
 
 
@@ -254,8 +259,8 @@ def test_stop_joins_releases_and_closes(harness: Harness) -> None:
     assert not harness.sources[0].is_open
     assert harness.sources[0].release_calls >= 1
     count = harness.recorder.count()
-    harness.worker.stop()  # idempotent
-    time.sleep(0.02)
+    harness.worker.stop()  # idempotent; it joins the worker thread
+    # No worker thread is left to deliver a callback, so the count cannot move.
     assert harness.recorder.count() == count
     assert harness.worker.stats.camera_open is False
 
@@ -349,10 +354,10 @@ def test_set_active_false_releases_camera(harness: Harness) -> None:
     first = harness.sources[0]
     assert wait_until(lambda: not first.is_open and not harness.worker.stats.camera_open)
     assert first.release_calls >= 1
-    count = harness.recorder.count()
-    time.sleep(0.03)
-    assert harness.recorder.count() == count  # idle: nothing emitted
+    # The release published its stats: the worker is idle, so no further observations arrive
+    # until tracking is resumed.
     assert harness.recorder.wait_for(lambda: any(not s.camera_open for s in harness.recorder.stats))
+    count = harness.recorder.count()
 
     harness.worker.set_active(True)
     assert harness.recorder.wait_for(lambda: len(harness.recorder.observations) > count)
@@ -364,7 +369,10 @@ def test_set_active_false_releases_camera(harness: Harness) -> None:
 def test_inactive_before_start_never_opens_camera(harness: Harness) -> None:
     harness.worker.set_active(False)
     harness.worker.start()
+    # An inactive worker goes straight to idle and publishes nothing, so a bounded quiet period
+    # is the only observable proof; stop() then joins the thread, so the check is race-free.
     time.sleep(0.03)
+    harness.worker.stop(TIMEOUT)
     assert harness.sources == []
     assert harness.recorder.count() == 0
 
@@ -445,7 +453,9 @@ def test_preview_off_stops_frames(harness: Harness) -> None:
     assert harness.recorder.wait_for(lambda: len(harness.recorder.observations) >= n + 3)
     with harness.recorder.cond:
         previews = len(harness.recorder.previews)
-    time.sleep(0.02)
+    # One more frame is observed after the snapshot; previews are delivered in frame order by the
+    # same thread, so any preview for that frame would already be recorded.
+    assert harness.recorder.wait_for(lambda: len(harness.recorder.observations) >= n + 4)
     with harness.recorder.cond:
         assert len(harness.recorder.previews) == previews
 
@@ -560,11 +570,13 @@ def test_persistently_failing_backend_backs_off() -> None:
     worker.set_motion_gate(False, 2.0)
     worker.start()
     try:
-        time.sleep(0.15)
+        # Wait for the first scheduled retry instead of a fixed delay: the back-off constants
+        # above keep every later retry at least 30 ms apart.
+        assert wait_until(lambda: len(backends) >= 2)
     finally:
         worker.stop()
-    # Without back-off this would recreate the backend hundreds of times.
-    assert 1 <= len(backends) <= 5
+    # Without back-off the failing backend would be recreated hundreds of times meanwhile.
+    assert 2 <= len(backends) <= 5
     assert all(b.close_calls == 1 for b in backends)
 
 
@@ -752,13 +764,17 @@ def test_camera_stays_off_when_deactivated_during_backend_creation() -> None:
         assert creating.wait(TIMEOUT)
         worker.set_active(False)
         release.set()
-        time.sleep(0.05)
-        assert sources == []
-        worker.set_active(True)
-        assert wait_until(lambda: bool(sources) and sources[0].is_open)
     finally:
         release.set()
-        worker.stop()
+        # stop() joins the worker: any camera it had opened during backend creation is recorded.
+        worker.stop(TIMEOUT)
+    assert sources == []
+    worker.set_active(True)
+    worker.start()
+    try:
+        assert wait_until(lambda: bool(sources) and sources[0].is_open)
+    finally:
+        worker.stop(TIMEOUT)
 
 
 def test_stop_during_backend_creation_never_opens_the_camera() -> None:
@@ -780,7 +796,9 @@ def test_stop_during_backend_creation_never_opens_the_camera() -> None:
     assert creating.wait(TIMEOUT)
     stopper = threading.Thread(target=worker.stop, args=(TIMEOUT,))
     stopper.start()
-    time.sleep(0.02)
+    # ``stop`` publishes its request before waiting for the worker: release the slow backend only
+    # after that, so the worker cannot slip a source open in between.
+    assert wait_until(lambda: worker._stop_requested)
     release.set()
     stopper.join(TIMEOUT)
     assert not worker.is_running

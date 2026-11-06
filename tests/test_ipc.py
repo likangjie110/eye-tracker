@@ -278,7 +278,7 @@ def test_private_temp_dir_is_created_for_this_user_only(
 ) -> None:
     monkeypatch.setattr(ipc.tempfile, "tempdir", str(tmp_path))
     path = ipc._private_temp_dir()
-    assert path == os.path.join(str(tmp_path), f"eye-tracker-{os.getuid()}")
+    assert path == os.path.join(str(tmp_path), f"eye-tracker-{os.getuid()}")  # type: ignore[attr-defined]
     assert os.stat(path).st_mode & 0o777 == 0o700
     assert ipc._private_temp_dir() == path  # reused
 
@@ -288,7 +288,7 @@ def test_private_temp_dir_refuses_a_directory_others_can_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ipc.tempfile, "tempdir", str(tmp_path))
-    shared = tmp_path / f"eye-tracker-{os.getuid()}"
+    shared = tmp_path / f"eye-tracker-{os.getuid()}"  # type: ignore[attr-defined]
     shared.mkdir()
     shared.chmod(0o777)
     assert ipc._private_temp_dir() is None
@@ -421,7 +421,8 @@ def test_instance_lock_between_processes_and_after_a_crash(app_dirs: Path) -> No
             holder.stdin.close()
         if holder.stdout is not None:
             holder.stdout.close()
-    # The OS releases the lock of a dead process (on Windows possibly a moment later).
+    # The OS releases the lock of a dead process asynchronously (on Windows possibly a moment
+    # later), so this bounded poll is the only way to wait for it: no local event is delivered.
     deadline = time.monotonic() + 5.0
     while not lock.acquire() and time.monotonic() < deadline:
         time.sleep(0.05)
@@ -665,7 +666,7 @@ class _SquatterPipe:
         import ctypes
         from ctypes import wintypes as w
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]  # Windows-only API
         create = kernel32.CreateNamedPipeW
         create.restype = w.HANDLE
         # name, open mode, pipe mode, max instances, out/in buffers, timeout, security
@@ -684,7 +685,7 @@ class _SquatterPipe:
             None,
         )
         if not handle or handle == ctypes.c_void_p(-1).value:
-            raise OSError(ctypes.get_last_error(), "CreateNamedPipeW failed")
+            raise OSError(ctypes.get_last_error(), "CreateNamedPipeW failed")  # type: ignore[attr-defined]  # Windows-only API
         self._handle: int | None = handle
 
     def close(self) -> None:
