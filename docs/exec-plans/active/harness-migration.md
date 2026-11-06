@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 3 个重构步骤）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 4 个重构步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -449,8 +449,14 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
   **3418 → 3165 行**，测试仍可通过 controller 访问这些 seam。新增
   `tests/test_controller_support.py`（15 个直接特征测试）。CI run
   [42156071025](https://github.com/likangjie110/eye-tracker/actions/runs/42156071025) 全绿。
-- 剩余 B1：`Controller` 类本身（2,845 行）按协作对象拆分（相机/会话、热键、校准流程），
-  `app.py` / `ipc.py` 的窗口与单实例职责整理。作为下一轮继续。
+- **步骤 4（热键注册抽离）** `9b1ea54`：`register_hotkeys` / `hotkey_error` 移入
+  `engine/hotkey_setup.py`，注册规则可脱离 QApplication 测试；新增 9 个直接测试。
+  `controller.py` 3165 → 3114 行，`Controller` 类 2845 → 2795 行。CI run
+  [42156669587](https://github.com/likangjie110/eye-tracker/actions/runs/42156669587) 全绿。
+- 附加：结构测试现在忽略 `if TYPE_CHECKING:` 内的 import（类型依赖不算运行时依赖），
+  并带负例；这让纯模块可以引用平台类型而不制造假环。
+- 剩余 B1：`Controller` 类本身（2,795 行）继续按协作对象拆分（相机/会话、校准流程、
+  模式确认展示），`app.py` / `ipc.py` 的窗口与单实例职责整理。作为下一轮继续。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
@@ -535,4 +541,5 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 4 · B1 | 步骤 1：`command_text.py` 承接 CLI 文案，app/cli 环消失，结构测试环基线收缩 | `f7b8a79` | 行为不变：仅 import 路径与文件归属变化；产物字符串逐字节一致（test_cli 未改断言）；CI run `42155164787` 绿 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 2：`effective_away_action` 移入 `engine/presence.py`，UI 不再依赖 controller；补 2 个纯策略测试 | `b910510a` | 行为不变；CI run `42155431560` 绿 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 3：controller 支撑层（指针/worker 协议、QtCursor、monitor 重认、视觉工厂）移入 `controller_support.py`；新增 15 个直接特征测试 | `18ada68` | 行为不变（seam 名从 controller 仍可 import）；controller.py 3418→3165；CI run `42156071025` 绿 |
+| 2026-11-06 | 阶段 4 · B1 | 步骤 4：热键注册规则移入 `engine/hotkey_setup.py`；新增 9 个直接测试；结构测试忽略 TYPE_CHECKING 类型 import | `9b1ea54` | 行为不变（HOTKEY_ACTIONS 仍从 controller 可 import）；controller.py 3165→3114，类 2845→2795；CI run `42156669587` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
