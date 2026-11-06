@@ -6,7 +6,7 @@
     "class_lines": 300
   },
   "files": {
-    "src/eye_tracker/app.py": 1317,
+    "src/eye_tracker/app.py": 926,
     "src/eye_tracker/cli.py": 622,
     "src/eye_tracker/config.py": 623,
     "src/eye_tracker/diagnostics.py": 1319,
@@ -22,11 +22,10 @@
     "src/eye_tracker/ui/calibration_window.py": 997,
     "src/eye_tracker/ui/settings_dialog.py": 1520,
     "src/eye_tracker/ui/tray.py": 702,
-    "src/eye_tracker/vision/backends/facemesh_backend.py": 1454,
+    "src/eye_tracker/vision/backends/facemesh_backend.py": 954,
     "src/eye_tracker/vision/worker.py": 776
   },
   "functions": {
-    "src/eye_tracker/app.py::build_app": 128,
     "src/eye_tracker/cli.py::build_parser": 114,
     "src/eye_tracker/diagnostics.py::_bench_mode": 81,
     "src/eye_tracker/diagnostics.py::_calibration_section": 61,
