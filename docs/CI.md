@@ -143,6 +143,11 @@ tag vX.Y.Z
 
 - `ci.yml` lint job 增量新增 2 个 step：配置文档同步、大小门禁。**没有**新建 workflow、
   重建打包流水线或改变发布行为（Tauri 三问不适用，见 §3）。
+- **发布门禁（B7）**：`release.yml` 新增 `test` job（ubuntu-24.04，`uv sync --locked` +
+  `pytest -q`），`build` job `needs: test`——tag 不可能再发布未经测试的提交。
+  `build.yml` 的 `prepare` 校验 tag 必须指向 `origin/main` 的祖先，且 `__version__` 必须含
+  纯数字版本（Windows/CFBundleVersion 需要）。
+- **发布方式未变**：仍为 tag 直接正式发布（非 draft），平台范围与签名行为保持原样（D11）。
 - 新增 `scripts/lint_size.py` + `scripts/analysis/size-baseline.json`：文件 >600 行、
   函数 >60 行、类 >300 行必须已在基线内，基线只许收缩（D10）。
 - 新增 `tests/test_architecture.py`：解析全仓 import 图，强制 `ARCHITECTURE.md` 的 R1–R5、
@@ -169,6 +174,7 @@ tag vX.Y.Z
 | 例外表只能收缩 | `tests/test_architecture.py::test_exception_table_only_shrinks`、`test_synthetic_stale_exception_is_rejected` |
 | 文档索引/版本漂移被拒绝 | `tests/test_docs.py::test_docs_index_check_detects_a_missing_entry`、`test_stale_version_check_detects_drift` |
 | 隐私边界可拦截 | `tests/test_privacy.py`（既有 291 个参数化用例，含注入违规） |
+| 发布前测试门禁 / tag 在 main 上 / numeric 版本 | `tests/test_build_scripts.py::test_release_requires_the_test_suite_and_a_main_ancestor` |
 
 ### 4.4 与现有配置的关系
 
@@ -181,3 +187,4 @@ tag vX.Y.Z
 |---|---|---|
 | 2026-11-06 | 建立本文件：框架判定 = 其他；记录现有 5 个 workflow 与发布链路 | harness 阶段 1（§3.2 / 附录 C） |
 | 2026-11-06 | 阶段 3：新增配置文档同步与大小门禁两个 CI step；建立本地门禁入口、pre-commit、结构测试与负例自证 | harness 阶段 3（§5） |
+| 2026-11-06 | 阶段 4 B7：release 增加 test 门禁；tag 必须位于 main；numeric 版本 guard | 解决 CI 审计唯一 P1（TD-CI-001）与 tag 来源问题（TD-CI-003） |

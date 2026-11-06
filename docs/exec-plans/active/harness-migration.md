@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06）；阶段 4 进行中（B1、B2 完成，B3 进行中）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06）；阶段 4 进行中（B1、B2 完成；B3 进行中；B7 已开始并关闭 CI 唯一 P1）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -622,4 +622,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B3 | 步骤 1：settings_dialog 拆出 settings_status（220）+ hotkey_edit（342），facade 2029→1520；测试 seam 更新 | `5d14754` | 行为不变（公共导出与测试入口不变）；CI run `42164517742` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 2：calibration_window 拆出 model（196）/widgets（327）/surface（371），facade 1767→997；类本身待拆 | `365cf22` | 行为不变（测试未改）；CI run `42165503750` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 3：wizard 拆出 wizard_pages（465），wizard 999→572；公共再导出保持 | `d07e618` | 行为不变（仅私有 helper 的测试引用改指新模块）；CI run `42166148422` 绿 |
+| 2026-11-06 | 阶段 4 · B7 | 步骤 1：release.yml 增加 test job（build needs test）；build.yml prepare 校验 tag 在 main 祖先 + numeric 版本；guard 测试 | `43f0342` | 关闭 CI 审计唯一 P1（TD-CI-001）与 TD-CI-003；发布方式仍为直接正式发布；CI run `42166713950` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
