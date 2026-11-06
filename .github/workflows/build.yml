@@ -78,20 +78,12 @@ jobs:
       - name: Read the version
         id: version
         run: |
-          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/eye_tracker/__init__.py)"
-          if [[ -z "$version" ]]; then
-            echo "::error file=src/eye_tracker/__init__.py::cannot read __version__"
-            exit 1
-          fi
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match __version__ \"$version\" (expected v$version)"
-            exit 1
-          fi
-          # Windows file versions and CFBundleVersion must be purely numeric.
-          numeric="$(grep -oE '^[0-9]+(\.[0-9]+){0,2}' <<<"$version")"
-          if [[ -z "$numeric" ]]; then
-            echo "::error file=src/eye_tracker/__init__.py::cannot read a numeric version from \"$version\""
-            exit 1
+          # One AST reader, also used by the AppImage script; no sed that silently
+          # reads an empty string when the declaration is reformatted (TD-CI-004).
+          version="$(python3 scripts/version.py)" || exit 1
+          numeric="$(python3 scripts/version.py --numeric)" || exit 1
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            python3 scripts/version.py --tag "$GITHUB_REF_NAME" || exit 1
           fi
           prerelease=false
           if [[ "$version" =~ [a-zA-Z] ]]; then

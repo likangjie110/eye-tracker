@@ -67,8 +67,7 @@ done
 [[ "$(uname -s)" == "Linux" ]] || die "this script builds Linux packages; run it on Linux"
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$ROOT/src/eye_tracker/__init__.py")"
-  [[ -n "$VERSION" ]] || die "cannot read __version__ from src/eye_tracker/__init__.py"
+  VERSION="$(python3 "$ROOT/scripts/version.py")" || die "cannot read __version__"
 fi
 ARCH="${ARCH:-$(uname -m)}"
 DIST="$(mkdir -p "$DIST" && cd "$DIST" && pwd)"

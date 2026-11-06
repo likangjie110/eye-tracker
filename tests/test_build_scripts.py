@@ -843,7 +843,7 @@ def test_release_requires_the_test_suite_and_a_main_ancestor() -> None:
     prepare = _jobs(_workflow("build.yml"))["prepare"]
     assert "fetch-depth: 0" in prepare
     assert "merge-base --is-ancestor" in prepare
-    assert "cannot read a numeric version" in prepare
+    assert "scripts/version.py --numeric" in prepare
 
 
 def test_release_builds_pass_the_bundle_privacy_gate() -> None:
