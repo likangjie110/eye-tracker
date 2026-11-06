@@ -694,4 +694,6 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 债务清理 · 架构环 | TD-ARCH-006 关闭：更新错误类下沉 `update/errors.py`，fetch↔winhttp 环消失 | 待提交 | 架构测试 ALLOWED_CYCLES 为空仍全绿 |
 | 2026-11-06 | 债务清理 · 更新安全 | TD-SEC-002 关闭：安装器 sidecar 校验、启动前哈希复核、目录/符号链接限制 | 待提交 | 42 installer/service 测试全绿 |
 | 2026-11-06 | 债务清理 · P1 大件 | Controller 3073→2535（类 2751→2216，hotkeys/screens mixins）；app.py 926→673（类 733→479）；facemesh 619→541（类 363，process 45）→ TD-CPLX-006/007 关闭，001 收窄 | 待提交 | 219 controller/app + 141 facemesh 测试全绿 |
+| 2026-11-06 | 债务清理 · 安全/CI | TD-SEC-004 关闭（IPC 身份未知 fail-closed）；TD-CI-027/028 关闭（pages 锁定依赖、404 与 API 错误区分+重试） | 待提交 | ipc/build-script 测试全绿 |
+| 2026-11-06 | 债务清理 · P1 收尾 | TD-CPLX-001 关闭：controller.py 3418→1992（-41.7%），Controller 2845→1692，panes/calibration mixins 拆出；P1 仅剩 SEC-001（等证书） | 待提交 | 232 controller/app/architecture 测试全绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
