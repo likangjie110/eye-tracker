@@ -15,6 +15,9 @@ must be made on the operating system it targets: PyInstaller does not cross-comp
 
 ## Common steps
 
+The examples below use `0.3.0`, the current value of `__version__` in
+`src/eye_tracker/__init__.py`; substitute the version you are building.
+
 ```bash
 uv sync --locked
 uv run python scripts/fetch_models.py --check     # verify the committed models and licence texts
@@ -61,9 +64,9 @@ the bundled FFmpeg decodes an AVI and an MP4 file (written on the spot with the 
 OpenCV), and that camera probing runs (AVFoundation on macOS). It writes only to a temporary folder:
 
 ```bash
-uv run python scripts/smoke_test_bundle.py --version 0.2.0 dist/EyeTracker/eye-tracker-cli.exe
-uv run python scripts/smoke_test_bundle.py --version 0.2.0 "dist/Eye Tracker.app/Contents/MacOS/eye-tracker-cli"
-uv run python scripts/smoke_test_bundle.py --version 0.2.0 dist/eye-tracker/eye-tracker
+uv run python scripts/smoke_test_bundle.py --version 0.3.0 dist/EyeTracker/eye-tracker-cli.exe
+uv run python scripts/smoke_test_bundle.py --version 0.3.0 "dist/Eye Tracker.app/Contents/MacOS/eye-tracker-cli"
+uv run python scripts/smoke_test_bundle.py --version 0.3.0 dist/eye-tracker/eye-tracker
 ```
 
 ## Packages
@@ -71,8 +74,9 @@ uv run python scripts/smoke_test_bundle.py --version 0.2.0 dist/eye-tracker/eye-
 **Windows installer and portable ZIP**
 
 ```powershell
-iscc /DAppVersion=0.2.0 packaging\windows\installer.iss   # -> dist\EyeTracker-0.2.0-windows-x64-setup.exe
-Compress-Archive dist\EyeTracker dist\EyeTracker-0.2.0-windows-x64-portable.zip
+iscc /DAppVersion=0.3.0 /DAppVersionNumeric=0.3.0 packaging\windows\installer.iss
+# -> dist\EyeTracker-0.3.0-windows-x64-setup.exe
+Compress-Archive dist\EyeTracker dist\EyeTracker-0.3.0-windows-x64-portable.zip
 ```
 
 The installer is per user (no administrator rights), creates a Start menu shortcut, and optionally
@@ -93,8 +97,8 @@ when it lists `startup`.
 **macOS disk image**
 
 ```bash
-bash packaging/macos/make_dmg.sh --app "dist/Eye Tracker.app" --version 0.2.0 \
-  --out dist/EyeTracker-0.2.0-macos-arm64.dmg
+bash packaging/macos/make_dmg.sh --app "dist/Eye Tracker.app" --version 0.3.0 \
+  --out dist/EyeTracker-0.3.0-macos-arm64.dmg
 ```
 
 The script refuses an app that contains a symbolic link to a missing file, and names the links,
@@ -107,7 +111,7 @@ permissions survive updates. In CI, set the repository secrets `MACOS_SIGNING_CE
 **Linux AppImage and tarball**
 
 ```bash
-bash packaging/linux/build_appimage.sh --version 0.2.0
+bash packaging/linux/build_appimage.sh --version 0.3.0
 ```
 
 `appimagetool` and the AppImage runtime are downloaded at pinned versions and verified against their
@@ -159,9 +163,10 @@ altered (restore it from git), and the PyInstaller spec refuses to build without
   artifacts. Only for a tag does its publishing job (the only one with write access) compute
   `SHA256SUMS.txt`, attach build-provenance attestations and publish the GitHub release.
 
-Every workflow has read-only permissions unless a job needs more, uses actions pinned to commit
-SHAs (kept current by Dependabot), and runs in a concurrency group: a newer push cancels an older
-check, while release runs never cancel each other.
+Every workflow has read-only permissions unless a job needs more and uses actions pinned to commit
+SHAs (kept current by Dependabot). Except for the reusable `build.yml`, which inherits its caller's
+concurrency group, every workflow runs in a concurrency group: a newer push cancels an older check,
+while release runs never cancel each other.
 
 ## Website
 
@@ -183,7 +188,7 @@ uv run python -m http.server 8000 --directory _site
 
 1. Update `__version__` in `src/eye_tracker/__init__.py` and move the **Unreleased** notes in
    `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading, leaving `## [Unreleased]` empty.
-2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Commit, then tag and push: `git tag v0.3.0 && git push origin v0.3.0`.
    The installed apps look for `EyeTracker-<version>-windows-x64-setup.exe` and `SHA256SUMS.txt` in
    the latest release to update themselves ([`update/release.py`](../src/eye_tracker/update/release.py),
    checked by `tests/test_update_release.py`): keep those two names when you change `release.yml`.

@@ -38,7 +38,8 @@ for now. **Check for updates…** in the tray menu looks once, when you click it
 `https://api.github.com/repos/bugraskl/eye-tracker/releases/latest`: once a day when the setting is
 on (the first one about a minute and a half after the app starts), and when you click **Check for
 updates…**. The request carries a `User-Agent` that names the app and its version
-(`EyeTracker/0.2.1 (+https://github.com/bugraskl/eye-tracker)`) and an `Accept` header. Nothing
+(`EyeTracker/<version> (+https://github.com/bugraskl/eye-tracker)`, where `<version>` is the
+running app's version) and an `Accept` header. Nothing
 else: no identifier, no cookie, no settings, no calibration, no information about your computer.
 GitHub sees your IP address, as any web server does.
 

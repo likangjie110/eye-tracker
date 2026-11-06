@@ -54,7 +54,8 @@ flowchart LR
      without eye direction, for the lowest CPU use.
 
    The MediaPipe *runtime* is intentionally not used. Its native library contains a usage-logging
-   uploader, and this app never touches the network (see [privacy.md](privacy.md)).
+   uploader, and this app touches the network only through the opt-in update check (see
+   [privacy.md](privacy.md)).
 4. **Gaze model.** `gaze/model.py` maps the feature vector to a point on the virtual desktop with
    ridge regression on standardised features. Nonlinear terms (squares, pairwise products, cubes)
    are built only from the gaze-direction features (yaw, pitch, iris), never from head position or
@@ -198,12 +199,16 @@ happens anywhere.
 src/eye_tracker/
   types.py            shared value types (Rect, Monitor, Observation, TrackingState)
   config.py           typed settings with validation and forgiving loading
+  paths.py            config / data / log locations
+  logging_setup.py    rotating local logs (no telemetry, no crash upload)
+  trace.py            opt-in numeric trace for tuning and bug reports
   vision/             camera, motion gate, worker thread, face backends and models
   gaze/               gaze model, filters, calibration, calibration store, implicit learning
   engine/             decision, reading rule, presence, guard, scheduler, input tracking, controller
   panes/              split-pane focus (experimental): providers, worker thread, decision
   platform/           Windows / macOS / Linux integration, autostart, global hotkeys
   ui/                 tray, settings, calibration window, overlays, wizard
+  update/             the only networking code: opt-in update check and installer
   app.py, cli.py      application wiring and command line
   ipc.py              single instance and `eye-tracker ctl`
   diagnostics.py      `doctor` and `bench`

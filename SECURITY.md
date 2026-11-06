@@ -9,7 +9,7 @@ Only the latest release receives fixes. Please update before reporting.
 
 | Version | Supported |
 |---|---|
-| 0.1.x (latest) | ✅ |
+| latest release | ✅ |
 | older | ❌ |
 
 ## Reporting a vulnerability

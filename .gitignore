@@ -21,6 +21,8 @@ packaging/**/AppDir/
 *.tar.gz
 
 # Local tooling
+# Personal prompt log (harness rules §6.3): append-only, never pushed.
+prompt-history.txt
 graft/
 # ripgrep override that re-admits graft/ to local searches
 .ignore

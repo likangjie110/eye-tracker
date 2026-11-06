@@ -34,8 +34,8 @@ are looking at. Your hands stay on the keyboard.
 
 It is an open-source, cross-platform take on the idea behind [Glance Switch](https://glanceswitch.com/),
 with extras for privacy and presence: it locks your computer when you walk away, can cover the
-screen when someone looks over your shoulder (opt-in), and never sends a single byte over the
-network.
+screen when someone looks over your shoulder (opt-in), and sends nothing over the network
+unless you turn on the update check.
 
 ## Features
 
@@ -130,7 +130,7 @@ flowchart LR
 - **Action.** The cursor returns to where you left it on that monitor, and the last window you used
   there gets keyboard focus.
 
-Deeper dive: [architecture](docs/architecture.md).
+Deeper dive: [architecture](docs/architecture.md). Problems: [troubleshooting](docs/troubleshooting.md).
 
 ## Privacy
 

@@ -3,6 +3,9 @@
 Thanks for helping make Eye Tracker better. Reproducible bug reports, accuracy data from real
 setups, and small focused pull requests are the most valuable contributions.
 
+Working with an AI agent? Start at [`AGENTS.md`](AGENTS.md) for the repository map, commands and
+hard constraints; this file covers the human contribution workflow.
+
 ## Ground rules
 
 - **Privacy is a hard constraint.** No network code under `src/`, no frames written to disk, no

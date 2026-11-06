@@ -34,7 +34,7 @@ baktığınız monitöre taşır. Elleriniz klavyede kalır.
 
 [Glance Switch](https://glanceswitch.com/)'in fikrinin açık kaynaklı ve çok platformlu bir
 yorumudur. Gizlilik ve varlık algılama için ek özellikleri vardır: siz uzaklaşınca bilgisayarı
-kilitler, biri omzunuzun üzerinden bakınca ekranı perdeleyebilir (isteğe bağlı) ve ağa tek bir bayt
+kilitler, biri omzunuzun üzerinden bakınca ekranı perdeleyebilir (isteğe bağlı) ve siz güncelleme denetimini açmadıkça ağa tek bir bayt
 bile göndermez.
 
 ## Özellikler

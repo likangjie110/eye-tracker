@@ -6,11 +6,11 @@ get it: the Windows bundle (the contents of the portable ZIP) and its installed
 copy, the command-line tool inside the mounted macOS disk image, and the Linux
 AppImage. Run it from the repository root, in the build environment::
 
-    uv run python scripts/smoke_test_bundle.py --version 0.1.0 dist/EyeTracker/eye-tracker-cli.exe
-    uv run python scripts/smoke_test_bundle.py --version 0.1.0 \\
+    uv run python scripts/smoke_test_bundle.py --version 0.3.0 dist/EyeTracker/eye-tracker-cli.exe
+    uv run python scripts/smoke_test_bundle.py --version 0.3.0 \\
         "/Volumes/Eye Tracker/Eye Tracker.app/Contents/MacOS/eye-tracker-cli"
-    uv run python scripts/smoke_test_bundle.py --version 0.1.0 \\
-        dist/EyeTracker-0.1.0-linux-x86_64.AppImage
+    uv run python scripts/smoke_test_bundle.py --version 0.3.0 \\
+        dist/EyeTracker-0.3.0-linux-x86_64.AppImage
 
 It checks that the build
 
