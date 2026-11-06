@@ -3,11 +3,10 @@
 :func:`collect_report` gathers everything useful for a bug report into a
 JSON-friendly dict and :func:`format_report` renders it for humans. Collection
 never fails as a whole: a section that cannot be gathered carries an ``error``
-entry instead. The report is meant to be pasted into public bug reports, so it
-must not reveal the user's account name: the home directory is shown as ``~``
-wherever it appears (paths, quoted paths, error messages), camera files by
-their name only, camera device links without their serial number, and nothing
-derived from the user name (such as the instance socket name) is included.
+entry instead. The report is meant for public bug reports: the home directory
+is shown as ``~`` and other absolute paths keep only their last part, camera
+device links lose their serial number, and nothing derived from the user name
+(such as the instance socket name) is included.
 
 Whether the global hotkeys could be registered is only known to the app that
 registered them: the settings window passes its hotkey manager in, and the
@@ -139,11 +138,9 @@ def collect_report(
 ) -> dict[str, Any]:
     """Gather diagnostics. Creates a ``QGuiApplication`` if none exists (for monitors).
 
-    Args:
-        probe_cameras: Briefly open camera indices 0-3 (their lights may flash).
-        hotkey_manager: The app's own hotkey manager (the settings window passes
-            it), which knows what the OS accepted. Without it, a running
-            instance is asked for its ``status``.
+    ``probe_cameras`` briefly opens camera indices 0-3 (their lights may flash).
+    ``hotkey_manager`` is the app's own manager, which knows what the OS accepted;
+    without it, a running instance is asked for its ``status``.
     """
     services = _platform_services()
     settings, settings_info = _settings_section()
@@ -166,7 +163,7 @@ def collect_report(
     report["calibration"] = _safe(lambda: _calibration_section(report, settings))
     report["problems"] = _problems(report)
     # Every section redacts its paths; this catches what they cannot foresee
-    # (an OS error quoting a file under the home directory, a note, ...).
+    # (an OS error quoting a file, a note, anything nested in a section, ...).
     redacted: dict[str, Any] = _redact_tree(report)
     return redacted
 
@@ -490,10 +487,8 @@ def _hotkeys_section(
 ) -> dict[str, Any]:
     """Configured hotkeys, what is wrong with them, and what the OS accepted.
 
-    ``doctor`` cannot register anything itself (a running app holds its
-    hotkeys, and grabbing them would change global state), so registration
-    results come from ``live_manager`` (the app's own manager) or a running
-    instance; otherwise they are unknown.
+    ``doctor`` registers nothing itself (that would change global state): the
+    app's own manager or a running instance says what the OS accepted.
     """
     from .platform.hotkeys import create_hotkey_manager, parse_hotkey
 
@@ -592,8 +587,7 @@ def _instance_hotkeys() -> tuple[set[str], dict[str, str], str] | None:
     """What the running instance's ``status`` says about its hotkeys.
 
     ``(registered names, {name: why it is not registered}, its manager's note)``;
-    ``None`` when the instance does not answer or does not report its hotkeys
-    (an older version).
+    ``None`` when the instance does not answer or does not report its hotkeys.
     """
     status = _instance_status()
     hotkeys = status.get("hotkeys") if status is not None else None
@@ -648,13 +642,9 @@ def _autostart_section() -> dict[str, Any]:
 def _redacted_command(parts: Sequence[str], *, posix_shell: bool = os.name != "nt") -> str:
     """:func:`format_command` with the home directory shown as ``~``.
 
-    A POSIX shell expands ``~`` only outside quotes, so there the ``~/`` that
-    replaced the home directory at the start of an argument stays in front of
-    the quoted rest, and a command the report suggests still runs when pasted:
-    ``~/'my apps/eye-tracker'``, not ``'~/my apps/eye-tracker'``. Windows
-    shells give ``~`` no meaning (there it only shortens the path), so
-    ``posix_shell`` is ``False`` there and the command is rendered as
-    :func:`format_command` renders it.
+    A POSIX shell expands ``~`` only outside quotes, so there the ``~/`` stays
+    in front of the quoted rest (``~/'my apps/x'``); Windows gives ``~`` no
+    meaning, so ``posix_shell`` is ``False`` there.
     """
     shown = [_redact(part) or "" for part in parts]
     if not posix_shell:
@@ -693,8 +683,7 @@ def _profile_override() -> bool:
 
 
 def _settings_section() -> tuple[Settings, dict[str, Any]]:
-    """Settings as the app would load them, without the side effects of ``Settings.load``
-    (which moves a corrupt file aside)."""
+    """Settings as the app would load them, without ``Settings.load``'s side effects."""
     path = paths.settings_file()
     info: dict[str, Any] = {"file_exists": path.is_file()}
     settings = Settings()
@@ -1040,19 +1029,39 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _redact(value: str | os.PathLike[str] | None) -> str | None:
-    """Replace the home directory with ``~`` wherever it appears in ``value``.
+#: An absolute path in a report: a quoted one (spaces allowed), a whole value, or one embedded
+#: in text. The lookbehind keeps URL paths, relative paths and already shortened paths alone.
+_ABSOLUTE_PATH = re.compile(
+    r'(?P<q>["\'])(?P<quoted>(?:[A-Za-z]:[\\/]|/|\\\\[^\\/\s"\' ]+[\\/])[^"\']*)(?P=q)'
+    r'|^(?P<value>(?:[A-Za-z]:[\\/]|/|\\\\[^\\/\s"\' ]+[\\/]).*)$'
+    r'|(?<![\w:/\\~.])(?P<plain>(?:[A-Za-z]:[\\/]|/|\\\\[^\\/\s"\' ]+[\\/])[^\s"\'<>|*?]+)'
+)
 
-    Not only as a prefix: paths also turn up quoted (Explorer's "Copy as path"
-    in *Pause while these apps run*), inside OS error messages and with either
-    slash. A longer name that merely starts with the home path (``/home/al``
-    in ``/home/alice``) is left alone.
+
+def _shorten_match(match: re.Match[str]) -> str:
+    """One match of :data:`_ABSOLUTE_PATH`, shortened (quotes kept)."""
+    path = match.group("quoted") or match.group("value") or match.group("plain") or ""
+    if path.startswith(("/dev/video", "/dev/v4l/")):  # camera nodes: no personal information
+        return match.group(0)
+    parts = re.split(r"([\\/])", path.rstrip("\\/"))
+    short = f"...{parts[-2]}{parts[-1]}" if len(parts) > 2 else "..."
+    quote = match.group("q") or ""
+    return f"{quote}{short}{quote}"
+
+
+def _redact(value: str | os.PathLike[str] | None) -> str | None:
+    """Hide the home directory and every other absolute path in ``value``.
+
+    The home directory becomes ``~`` wherever it appears; any other absolute
+    path keeps only its last part (``/tmp/alice/x`` -> ``.../x``); URLs stay.
     """
     if value is None:
         return None
     text = os.fspath(value)
     pattern = _home_pattern()
-    return pattern.sub("~", text) if pattern is not None else text
+    if pattern is not None:
+        text = pattern.sub("~", text)
+    return _ABSOLUTE_PATH.sub(_shorten_match, text)
 
 
 def _home_pattern() -> re.Pattern[str] | None:
@@ -1077,20 +1086,11 @@ def _home_pattern() -> re.Pattern[str] | None:
 
 def _redact_tree(value: Any) -> Any:
     """``value`` with :func:`_redact` applied to every string in nested dicts and lists."""
-    pattern = _home_pattern()
-    if pattern is None:
-        return value
-
-    def walk(item: Any) -> Any:
-        if isinstance(item, str):
-            return pattern.sub("~", item)
-        if isinstance(item, dict):
-            return {key: walk(child) for key, child in item.items()}
-        if isinstance(item, (list, tuple)):
-            return [walk(child) for child in item]
-        return item
-
-    return walk(value)
+    if isinstance(value, dict):
+        return {key: _redact_tree(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_tree(child) for child in value]
+    return _redact(value) if isinstance(value, str) else value
 
 
 def _describe_device(device: str) -> str:

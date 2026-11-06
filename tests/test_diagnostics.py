@@ -138,6 +138,19 @@ def test_report_paths_are_relative_to_home(env: Path) -> None:
     assert report["paths"]["profile"] == "custom (--config-dir)"
 
 
+def test_report_shortens_paths_that_are_not_under_home(env: Path) -> None:
+    """TD-SEC-008: a --config-dir outside home must not reach a public bug report."""
+    report = diagnostics.collect_report()
+    settings_file = report["paths"]["settings_file"]
+    if str(paths.settings_file()).lower().startswith(str(Path.home()).lower()):
+        assert settings_file.startswith("~")  # a CI temp folder under home
+    else:
+        assert settings_file.startswith("...")
+    assert settings_file.endswith("settings.json")
+    assert str(paths.settings_file()) not in json.dumps(report)
+    assert str(paths.config_dir()) not in diagnostics.format_report(report)
+
+
 def test_camera_probe_is_opt_in(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from eye_tracker.vision import camera
 
@@ -319,9 +332,34 @@ def test_redact(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert diagnostics._redact(None) is None
     assert diagnostics._redact(home) == "~"
     assert diagnostics._redact(f"{home}{sep}x{sep}y.log") == f"~{sep}x{sep}y.log"
-    # A sibling whose name merely starts with the home path is left alone.
-    assert diagnostics._redact(f"{home}2{sep}x") == f"{home}2{sep}x"
+    # A sibling whose name merely starts with the home path is not the home
+    # directory: it is shortened like any other absolute path.
+    assert diagnostics._redact(f"{home}2{sep}x") == f"...{sep}x"
     assert diagnostics._redact("relative/path") == "relative/path"
+
+
+def test_redact_hides_absolute_paths_outside_home() -> None:
+    """TD-SEC-008: paths such as /tmp, /opt or another user's reached bug reports whole."""
+    # Only the last part survives, so the account name and the folders do not.
+    assert diagnostics._redact("/tmp/bob/secret/settings.json") == ".../settings.json"
+    assert diagnostics._redact("/opt/my app/bin/eye-tracker") == ".../eye-tracker"
+    assert diagnostics._redact("see /var/log/app.log for details") == "see .../app.log for details"
+    assert diagnostics._redact('"C:\\Program Files\\Zoom\\bin\\Zoom.exe"') == '"...\\Zoom.exe"'
+    assert diagnostics._redact("\\\\server\\share\\tool.exe") == "...\\tool.exe"
+    # Camera device nodes name hardware, not a person: they are left readable.
+    assert diagnostics._redact("/dev/video* are noticed") == "/dev/video* are noticed"
+    # Other paths below /dev are shortened like everything else.
+    assert diagnostics._redact("/dev/shm/other-user/buffer.bin") == ".../buffer.bin"
+
+
+def test_redact_keeps_urls_whole() -> None:
+    """Release and download URLs in a report are not file paths."""
+    for url in (
+        "https://api.github.com/repos/bugraskl/eye-tracker/releases/latest",
+        "https://github.com/bugraskl/eye-tracker/releases/download/v1.0.0/setup.exe",
+        "https://example.com:8443/a/b",
+    ):
+        assert diagnostics._redact(url) == url
 
 
 def test_format_command() -> None:
@@ -495,7 +533,11 @@ def test_autostart_section_reports_the_status_and_registered_command(
 
 
 def test_redacted_commands_keep_the_home_tilde_expandable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Commands the report suggests ("run '...'") must still run when pasted into a shell."""
+    """Home paths in suggested commands keep the ``~`` a POSIX shell expands.
+
+    Other absolute paths are shortened like everywhere else (TD-SEC-008), so
+    such a command is no longer exact; the home one still runs when pasted.
+    """
     home = re.compile(r"[\\/]+home[\\/]+alice(?![\w.\-])")
     monkeypatch.setattr(diagnostics, "_home_pattern", lambda: home)
     parts = [
@@ -511,7 +553,7 @@ def test_redacted_commands_keep_the_home_tilde_expandable(monkeypatch: pytest.Mo
     ]
     assert diagnostics._redacted_command(parts, posix_shell=True) == (
         "~/.local/bin/eye-tracker --config-dir ~/'my profiles/test' ~ ~/ "
-        "'/opt/eye tracker/x' '~/a literal tilde' /home/alice2/x '--log=~/x'"
+        ".../x '~/a literal tilde' .../x '--log=~/x'"
     )
     redacted = [diagnostics._redact(part) or "" for part in parts]
     assert diagnostics._redacted_command(parts, posix_shell=False) == diagnostics.format_command(
@@ -631,13 +673,23 @@ def test_redact_replaces_the_home_directory_anywhere(home: Path) -> None:
     assert diagnostics._redact(quoted) == f'"{Path("~") / "AppData" / "Zoom.exe"}"'
     assert diagnostics._redact(f"see {home}") == "see ~"
     assert diagnostics._redact(home.as_posix() + "/x.log") == "~/x.log"  # Qt's slashes
-    # A name that merely starts with the account name is someone else's.
-    assert diagnostics._redact(f"{home}2") == f"{home}2"
-    assert diagnostics._redact(f"{home}.old") == f"{home}.old"
+    # A name that merely starts with the account name is someone else's: it is
+    # shortened as an absolute path, not replaced by ``~``.
+    sep = "\\" if "\\" in str(home) else "/"
+    assert diagnostics._redact(f"{home}2") == f"...{sep}alice2"
+    assert diagnostics._redact(f"{home}.old") == f"...{sep}alice.old"
     if sys.platform == "win32":  # case-insensitive file system
         assert diagnostics._redact(str(home).upper()) == "~"
     nested = diagnostics._redact_tree({"a": [str(home / "x"), {"b": (str(home),)}], "n": 3})
     assert nested == {"a": [str(Path("~") / "x"), {"b": ["~"]}], "n": 3}
+
+
+def test_redact_tree_shortens_paths_in_nested_sections() -> None:
+    tree = {"paths": {"log": "/tmp/other-user/app.log"}, "notes": ["/opt/app/x", 3]}
+    assert diagnostics._redact_tree(tree) == {
+        "paths": {"log": ".../app.log"},
+        "notes": [".../x", 3],
+    }
 
 
 def test_error_texts_do_not_reveal_the_home_directory(home: Path) -> None:
