@@ -141,6 +141,14 @@ share a short one.
   the type, class name and rectangle of the elements on the way to their side-by-side sessions, and
   the process of the element with the keyboard focus. Names and text of elements, and so your messages,
   are never read.
+- It does not read other apps' video or audio to see whether the camera is busy. On Windows and
+  Linux, **Release the camera while another app uses it** (on by default) checks locally, read-only,
+  which processes have the camera open: on Linux this user's processes that hold (or were just
+  refused) a `/dev/video*` device (`/proc/<pid>/fd`, with fanotify or inotify notifications where
+  the kernel allows it, polled otherwise); on Windows the camera consent store in the registry
+  (`CapabilityAccessManager\ConsentStore\webcam`, the data behind the camera privacy indicator).
+  Only program names and whether a camera is open are seen; nothing is recorded or sent, and
+  tracking pauses and releases the camera while the other app has it.
 - It does not identify you. It detects *a* face and where it looks; it does not recognise whose face
   it is.
 
