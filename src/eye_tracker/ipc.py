@@ -218,7 +218,6 @@ def is_running(timeout_ms: int = PROBE_TIMEOUT_MS) -> bool:
     return connected
 
 
-# ------------------------------------------------------------------------ lock
 class InstanceLock:
     """Exclusive lock that makes one process *the* running instance.
 
@@ -356,7 +355,6 @@ def _unlock(fd: int) -> None:
     fcntl.flock(fd, fcntl.LOCK_UN)
 
 
-# ---------------------------------------------------------------------- server
 class InstanceServer(QObject):
     """Local socket server of the running instance.
 
@@ -706,7 +704,8 @@ def _server_is_trusted(socket: QLocalSocket) -> bool:
     The name is predictable and, on Windows, pipe names are machine-wide, so
     another local account could create it first: to keep this app from
     starting (and its walk-away lock from running), or to read our requests.
-    ``True`` when the owner cannot be determined (nothing to go on).
+    ``False`` when the owner cannot be determined: a socket whose owner we cannot
+    prove is not trusted (TD-SEC-004).
     """
     try:
         if sys.platform == "win32":
@@ -716,7 +715,7 @@ def _server_is_trusted(socket: QLocalSocket) -> bool:
     except Exception:
         log.debug("Could not identify the owner of the instance socket", exc_info=True)
         verdict = None
-    return verdict is not False
+    return verdict is True
 
 
 def _client_is_trusted(socket: QLocalSocket) -> bool:
@@ -726,8 +725,8 @@ def _client_is_trusted(socket: QLocalSocket) -> bool:
     created first keeps that account's access rules, so its owner could connect
     to our instances and pause tracking, switch privacy mode on or quit. Elevated
     processes of the same user pass. ``True`` when the client cannot be
-    identified, like :func:`_server_is_trusted`, and always on Unix, where the
-    private socket directory is the access check.
+    identified (fail closed, TD-SEC-004), and always on Unix, where the private
+    socket directory is the access check.
     """
     if sys.platform != "win32":
         return True
@@ -736,7 +735,7 @@ def _client_is_trusted(socket: QLocalSocket) -> bool:
     except Exception:
         log.debug("Could not identify the command client", exc_info=True)
         verdict = None
-    return verdict is not False
+    return verdict is True
 
 
 def _socket_file_is_current_user(path: str) -> bool | None:
@@ -883,7 +882,8 @@ def _pipe_name_taken(name: str) -> bool:
             error = ctypes.get_last_error()
             exists = error in (_ERROR_SEM_TIMEOUT, _ERROR_PIPE_BUSY)
             if not exists and error != _ERROR_FILE_NOT_FOUND:
-                log.debug("WaitNamedPipe(%s) failed with error %d", path, error)
+                log.warning("WaitNamedPipe(%s) failed with error %d", path, error)
+                return True  # cannot prove the name is free: do not listen
         if not exists:
             return False
         if time.monotonic() >= deadline:

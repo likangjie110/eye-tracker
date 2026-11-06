@@ -553,7 +553,7 @@ def test_trust_check_accepts_our_own_server(
     assert verdicts == [True]
 
 
-def test_trust_check_fails_open_when_the_owner_is_unknown() -> None:
+def test_trust_check_fails_closed_when_the_owner_is_unknown() -> None:
     class Broken:
         def socketDescriptor(self) -> int:
             raise RuntimeError("no descriptor")
@@ -561,7 +561,7 @@ def test_trust_check_fails_open_when_the_owner_is_unknown() -> None:
         def fullServerName(self) -> str:
             raise RuntimeError("no name")
 
-    assert ipc._server_is_trusted(Broken()) is True  # type: ignore[arg-type]
+    assert ipc._server_is_trusted(Broken()) is False  # type: ignore[arg-type]
 
 
 def test_socket_file_owner_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -639,12 +639,19 @@ def test_client_check_accepts_our_own_client(
     assert verdicts == [True]
 
 
-def test_client_check_fails_open_when_the_client_is_unknown() -> None:
+def test_client_check_fails_closed_when_the_client_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        ipc, "_pipe_client_is_current_user", lambda handle: (_ for _ in ()).throw(RuntimeError)
+    )
+
     class Broken:
         def socketDescriptor(self) -> int:
-            raise RuntimeError("no descriptor")
+            return 1
 
-    assert ipc._client_is_trusted(Broken()) is True  # type: ignore[arg-type]
+    assert ipc._client_is_trusted(Broken()) is False  # type: ignore[arg-type]
 
 
 # ------------------------------------------------------- squatted pipe names
