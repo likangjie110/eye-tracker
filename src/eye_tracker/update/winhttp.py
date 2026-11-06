@@ -140,7 +140,11 @@ class WinHttpTransport:
         )
         if not self._session:
             raise _fail("Could not start a connection")
-        self._api.WinHttpSetTimeouts(self._session, *_TIMEOUTS)
+        if not self._api.WinHttpSetTimeouts(self._session, *_TIMEOUTS):
+            error = _fail("Could not set connection timeouts")
+            self._api.WinHttpCloseHandle(self._session)
+            self._session = None
+            raise error
 
     def open(self, host: str, path: str, accept: str | None) -> _WinHttpResponse:
         api = self._api
@@ -154,9 +158,10 @@ class WinHttpTransport:
             raise error
         try:
             policy = wintypes.DWORD(_REDIRECT_POLICY_NEVER)
-            api.WinHttpSetOption(
+            if not api.WinHttpSetOption(
                 request, _OPTION_REDIRECT_POLICY, ctypes.byref(policy), ctypes.sizeof(policy)
-            )
+            ):
+                raise _fail("Could not disable redirects")
             headers = f"Accept: {accept}\r\n" if accept else None
             sent = api.WinHttpSendRequest(
                 request, headers, 0xFFFFFFFF if headers else 0, None, 0, 0, 0

@@ -30,6 +30,8 @@ class FakeWinHTTP:
         self.calls: list[tuple[str, object]] = []
         self.closed: list[int] = []
         self.fail_open = False
+        self.fail_timeouts = False
+        self.fail_option = False
         self.fail_connect = False
         self.fail_open_request = False
         self.fail_send = False
@@ -50,7 +52,7 @@ class FakeWinHTTP:
 
     def WinHttpSetTimeouts(self, *_args: object) -> bool:
         self._call("SetTimeouts", *_args)
-        return True
+        return not self.fail_timeouts
 
     def WinHttpConnect(self, *_args: object) -> int:
         self._call("Connect", *_args)
@@ -62,7 +64,7 @@ class FakeWinHTTP:
 
     def WinHttpSetOption(self, request: int, option: int, value: object, size: int) -> bool:
         self._call("SetOption", request, option, value, size)
-        return True
+        return not self.fail_option
 
     def WinHttpSendRequest(self, *_args: object) -> bool:
         self._call("SendRequest", *_args)
@@ -247,6 +249,21 @@ def test_transport_close_is_idempotent(api: FakeWinHTTP) -> None:
     transport.close()
     transport.close()
     assert api.closed == [SESSION]
+
+
+def test_timeout_failure_closes_the_session(api: FakeWinHTTP) -> None:
+    api.fail_timeouts = True
+    with pytest.raises(NetworkError, match="Could not set connection timeouts"):
+        winhttp.WinHttpTransport()
+    assert api.closed == [SESSION]
+
+
+def test_redirect_policy_failure_closes_both_handles(api: FakeWinHTTP) -> None:
+    transport = winhttp.WinHttpTransport()
+    api.fail_option = True
+    with pytest.raises(NetworkError, match="Could not disable redirects"):
+        transport.open("api.github.com", "/", None)
+    assert api.closed == [REQUEST, CONNECTION]
 
 
 def test_session_failure_raises(api: FakeWinHTTP) -> None:
