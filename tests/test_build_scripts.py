@@ -380,11 +380,11 @@ def test_spec_is_valid_python_and_names_the_executables() -> None:
 
 
 def test_gui_executable_names_agree_with_autostart() -> None:
-    from eye_tracker.platform import autostart
+    from eye_tracker.platform import autostart_common
 
     gui_names = {"EyeTracker.exe", "Eye Tracker"}
     for name in gui_names:
-        assert name in autostart._GUI_EXECUTABLE_NAMES
+        assert name in autostart_common._GUI_EXECUTABLE_NAMES
         assert entry._is_gui_executable(name)
     # On Linux the single "eye-tracker" executable is both, and runs the CLI entry
     # (which starts the tray app when no subcommand is given).
@@ -392,7 +392,7 @@ def test_gui_executable_names_agree_with_autostart() -> None:
 
 
 def test_installer_matches_the_app() -> None:
-    from eye_tracker.platform import autostart
+    from eye_tracker.platform import autostart, autostart_common
 
     raw = (PACKAGING / "windows" / "installer.iss").read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf"), "installer.iss must keep its UTF-8 BOM"
@@ -402,7 +402,7 @@ def test_installer_matches_the_app() -> None:
     assert _iss_define("AppUserModelID") == APP_ID
     assert _iss_define("RunValueName") == autostart.RUN_VALUE_NAME
     assert _iss_define("RunKey") == autostart.RUN_KEY
-    assert _iss_define("StartupApprovedKey") == autostart.STARTUP_APPROVED_KEY
+    assert _iss_define("StartupApprovedKey") == autostart_common.STARTUP_APPROVED_KEY
 
     text = _iss_text()
     assert "PrivilegesRequired=lowest" in text

@@ -42,77 +42,27 @@ Filesystem locations and registry access go through small module-level helpers
 
 from __future__ import annotations
 
-import logging
 import os
-import plistlib
-import re
 import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
-from .. import APP_ID, APP_NAME, APP_SLUG, paths
-from ..config import atomic_write_text
-
-log = logging.getLogger(__name__)
-
-__all__ = [
-    "BACKGROUND_FLAG",
-    "CONFIG_DIR_FLAG",
-    "AutostartError",
-    "Status",
-    "disable",
-    "enable",
-    "is_enabled",
-    "is_supported",
-    "launch_command",
-    "location",
-    "refresh",
-    "registered_command",
-    "status",
-]
-
-BACKGROUND_FLAG = "--background"
-CONFIG_DIR_FLAG = "--config-dir"
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-#: Where Task Manager's "Startup apps" page records entries the user disabled.
-STARTUP_APPROVED_KEY = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
-RUN_VALUE_NAME = "EyeTracker"
-LAUNCH_AGENT_LABEL = APP_ID
-DESKTOP_FILE_NAME = f"{APP_SLUG}.desktop"
-
-#: Names the windowed executable may have next to a console ``*-cli`` executable.
-_GUI_EXECUTABLE_NAMES = ("EyeTracker.exe", "EyeTracker", "Eye Tracker", APP_SLUG)
-#: Characters that force quoting inside a Desktop Entry ``Exec`` value.
-_DESKTOP_RESERVED = frozenset(" \t\n\"'\\><~|&;$*?#()`")
-#: Characters escaped with a backslash inside a quoted ``Exec`` argument.
-_DESKTOP_QUOTED_ESCAPES = frozenset('"`$\\')
-#: Key-file string escapes (applied before ``Exec`` quoting is interpreted).
-_DESKTOP_STRING_ESCAPES = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
-
-_TRANSIENT_LOCATION_MESSAGE = (
-    f"{APP_NAME} is running from its disk image or from a temporary location, "
-    "which will not exist at the next login. Move it to the Applications folder, "
-    "open it from there, then turn on Start at login."
+from .. import paths
+from . import autostart_linux, autostart_macos, autostart_windows
+from .autostart_common import (
+    _GUI_EXECUTABLE_NAMES,
+    _TRANSIENT_LOCATION_MESSAGE,
+    BACKGROUND_FLAG,
+    CONFIG_DIR_FLAG,
+    RUN_KEY,
+    RUN_VALUE_NAME,
+    AutostartError,
+    _Entry,
+    _unlink,
+    log,
 )
-_LOGIN_ITEMS_MESSAGE = (
-    f"macOS keeps {APP_NAME} from starting at login. Allow it in System Settings › "
-    "General › Login Items (under “Allow in the Background”)."
-)
-
-#: launchd's command-line tool, by absolute path (an app may start with a bare PATH).
-_LAUNCHCTL = "/bin/launchctl"
-_LAUNCHCTL_TIMEOUT_S = 2.0
-#: One line of ``launchctl print-disabled``: ``"<label>" => <state>``.
-_LAUNCHD_ENTRY_RE = re.compile(r'^\s*"(?P<label>[^"]+)"\s*=>\s*(?P<state>\S+)\s*$')
-
-
-class AutostartError(OSError):
-    """Enabling or disabling start at login failed (message is user-presentable)."""
 
 
 class Status(StrEnum):
@@ -129,17 +79,6 @@ class Status(StrEnum):
     OTHER_PROFILE = "other-profile"
 
 
-@dataclass(frozen=True, slots=True)
-class _Entry:
-    """A login entry as found on disk or in the registry."""
-
-    #: Its command line split into arguments (empty when there is none).
-    command: list[str]
-    #: ``False`` when the OS or desktop switched it off without deleting it.
-    active: bool
-
-
-# ------------------------------------------------------------------ public API
 def is_supported() -> bool:
     """Whether this OS has an autostart implementation."""
     return _system() in {"windows", "macos", "linux"}
@@ -221,11 +160,11 @@ def enable(background: bool = True, config_dir: Path | None = None) -> None:
         if _is_transient_location(command[0]):
             raise AutostartError(_TRANSIENT_LOCATION_MESSAGE)
         if system == "windows":
-            _win_enable(command)
+            autostart_windows._win_enable(command)
         elif system == "macos":
-            _mac_enable(command)
+            autostart_macos._mac_enable(command)
         elif system == "linux":
-            _linux_enable(command)
+            autostart_linux._linux_enable(command)
         else:
             raise AutostartError(f"Start at login is not supported on {sys.platform}")
     except AutostartError:
@@ -256,11 +195,11 @@ def disable(config_dir: Path | None = None) -> None:
             return
     try:
         if system == "windows":
-            _win_disable()
+            autostart_windows._win_disable()
         elif system == "macos":
-            _unlink(_mac_plist_path())
+            _unlink(autostart_macos._mac_plist_path())
         else:
-            _unlink(_linux_desktop_path())
+            _unlink(autostart_linux._linux_desktop_path())
     except Exception as exc:
         raise AutostartError(f"Could not disable start at login: {exc}") from exc
     log.info("Start at login disabled")
@@ -311,9 +250,9 @@ def location() -> str | None:
     if system == "windows":
         return f"HKCU\\{RUN_KEY}\\{RUN_VALUE_NAME}"
     if system == "macos":
-        return str(_mac_plist_path())
+        return str(autostart_macos._mac_plist_path())
     if system == "linux":
-        return str(_linux_desktop_path())
+        return str(autostart_linux._linux_desktop_path())
     return None
 
 
@@ -478,406 +417,9 @@ def _read_entry() -> _Entry | None:
     """The login entry of the current OS, ``None`` when there is none."""
     system = _system()
     if system == "windows":
-        return _win_entry()
+        return autostart_windows._win_entry()
     if system == "macos":
-        return _mac_entry()
+        return autostart_macos._mac_entry()
     if system == "linux":
-        return _linux_entry()
+        return autostart_linux._linux_entry()
     return None
-
-
-# -------------------------------------------------------------------- Windows
-def _win_command_line(command: Sequence[str]) -> str:
-    return subprocess.list2cmdline(list(command))
-
-
-def _win_split(command_line: str) -> list[str]:
-    """Split a command line the way ``CommandLineToArgvW`` and the C runtime do.
-
-    The program name ends at the next space, or at the closing quote when it is
-    quoted; backslashes mean nothing there. For the other arguments, ``2n``
-    backslashes before a quote become ``n`` and the quote delimits, ``2n+1``
-    become ``n`` and a literal quote, and ``""`` inside quotes is a literal
-    quote. This is the inverse of ``subprocess.list2cmdline``.
-    """
-    text = command_line.lstrip(" \t")
-    if not text:
-        return []
-    if text.startswith('"'):
-        end = text.find('"', 1)
-        end = len(text) if end < 0 else end
-        args = [text[1:end]]
-        index = end + 1
-    else:
-        end = len(text)
-        for position, char in enumerate(text):
-            if char in " \t":
-                end = position
-                break
-        args = [text[:end]]
-        index = end
-    current: list[str] = []
-    in_quotes = started = False
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if char == "\\":
-            run = index
-            while run < length and text[run] == "\\":
-                run += 1
-            count = run - index
-            if run < length and text[run] == '"':
-                current.append("\\" * (count // 2))
-                if count % 2:
-                    current.append('"')
-                    index = run + 1
-                else:
-                    index = run  # the quote is a delimiter, handled next
-            else:
-                current.append("\\" * count)
-                index = run
-            started = True
-            continue
-        if char == '"':
-            if in_quotes and index + 1 < length and text[index + 1] == '"':
-                current.append('"')
-                index += 2
-                continue
-            in_quotes = not in_quotes
-            started = True
-        elif char in " \t" and not in_quotes:
-            if started:
-                args.append("".join(current))
-                current, started = [], False
-        else:
-            current.append(char)
-            started = True
-        index += 1
-    if started:
-        args.append("".join(current))
-    return args
-
-
-def _win_entry() -> _Entry | None:
-    value = _reg_read(RUN_KEY, RUN_VALUE_NAME)
-    if not isinstance(value, str) or not value.strip():
-        return None
-    return _Entry(_win_split(value), active=not _win_disabled_in_task_manager())
-
-
-def _win_disabled_in_task_manager() -> bool:
-    """Task Manager keeps the Run value but flags it; the first byte is odd when disabled."""
-    data = _reg_read(STARTUP_APPROVED_KEY, RUN_VALUE_NAME)
-    return isinstance(data, (bytes, bytearray)) and len(data) > 0 and data[0] & 1 == 1
-
-
-def _win_enable(command: Sequence[str]) -> None:
-    _reg_write_str(RUN_KEY, RUN_VALUE_NAME, _win_command_line(command))
-    # Clearing Task Manager's "disabled" flag makes the new entry effective;
-    # otherwise the toggle in our UI would silently do nothing.
-    _reg_delete(STARTUP_APPROVED_KEY, RUN_VALUE_NAME)
-
-
-def _win_disable() -> None:
-    _reg_delete(RUN_KEY, RUN_VALUE_NAME)
-    _reg_delete(STARTUP_APPROVED_KEY, RUN_VALUE_NAME)
-
-
-def _reg_read(key_path: str, name: str) -> Any | None:
-    """Value ``name`` under ``HKCU\\key_path``, ``None`` when missing."""
-    if sys.platform != "win32":
-        raise AutostartError("the Windows registry is not available on this OS")
-    import winreg
-
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ) as key:
-            value, _kind = winreg.QueryValueEx(key, name)
-    except FileNotFoundError:
-        return None
-    return value
-
-
-def _reg_write_str(key_path: str, name: str, value: str) -> None:
-    """Write a ``REG_SZ`` value under ``HKCU\\key_path`` (creating the key)."""
-    if sys.platform != "win32":
-        raise AutostartError("the Windows registry is not available on this OS")
-    import winreg
-
-    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-        winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
-
-
-def _reg_delete(key_path: str, name: str) -> None:
-    """Delete value ``name`` under ``HKCU\\key_path``; missing is fine."""
-    if sys.platform != "win32":
-        raise AutostartError("the Windows registry is not available on this OS")
-    import winreg
-
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-            winreg.DeleteValue(key, name)
-    except FileNotFoundError:
-        pass
-
-
-# ---------------------------------------------------------------------- macOS
-def _mac_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
-
-
-def _mac_plist(command: Sequence[str]) -> bytes:
-    agent = {
-        "Label": LAUNCH_AGENT_LABEL,
-        "ProgramArguments": list(command),
-        "RunAtLoad": True,
-        # A user-facing app: no background QoS throttling of the camera loop.
-        "ProcessType": "Interactive",
-        # Only in the graphical login session (not SSH or the login window).
-        "LimitLoadToSessionType": "Aqua",
-    }
-    return plistlib.dumps(agent, fmt=plistlib.FMT_XML, sort_keys=True)
-
-
-def _mac_enable(command: Sequence[str]) -> None:
-    _write_text(_mac_plist_path(), _mac_plist(command).decode("utf-8"))
-    if not _mac_disabled_in_launchd():
-        return
-    # Switched off in launchd's records, which outlive the plist: without this
-    # the checkbox would silently do nothing. ``enable`` only clears that
-    # record; it does not load the agent, which still starts at the next login.
-    domain = _mac_launchd_domain()
-    if domain is not None:
-        _launchctl("enable", f"{domain}/{LAUNCH_AGENT_LABEL}")
-    if _mac_disabled_in_launchd():
-        raise AutostartError(_LOGIN_ITEMS_MESSAGE)
-
-
-def _mac_disabled_in_launchd() -> bool:
-    """Whether launchd itself keeps the agent from starting, whatever the plist says.
-
-    ``launchctl disable`` (and ``unload -w``) record a switch-off in launchd's
-    per-user database and leave the plist untouched; the Login Items switch in
-    System Settings may do so as well. ``False`` when that cannot be read.
-    """
-    domain = _mac_launchd_domain()
-    if domain is None:
-        return False
-    listing = _launchctl("print-disabled", domain)
-    return listing is not None and _launchd_lists_disabled(listing, LAUNCH_AGENT_LABEL)
-
-
-def _launchd_lists_disabled(listing: str, label: str) -> bool:
-    """Whether ``launchctl print-disabled`` output switches ``label`` off.
-
-    Its lines read ``"<label>" => disabled`` (``=> true`` on older macOS);
-    other sections of the output map labels to app identifiers instead.
-    """
-    for line in listing.splitlines():
-        match = _LAUNCHD_ENTRY_RE.match(line)
-        if match and match["label"] == label and match["state"].lower() in {"disabled", "true"}:
-            return True
-    return False
-
-
-def _mac_launchd_domain() -> str | None:
-    """launchd's domain for this user's login session (``gui/<uid>``); ``None`` off POSIX."""
-    getuid = getattr(os, "getuid", None)
-    return f"gui/{getuid()}" if getuid is not None else None
-
-
-def _launchctl(*args: str) -> str | None:
-    """Run ``launchctl`` and return its output; ``None`` when it failed (tests replace it)."""
-    argv = [_LAUNCHCTL, *args]
-    try:
-        result = subprocess.run(
-            argv,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=_LAUNCHCTL_TIMEOUT_S,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        log.debug("%s failed: %s", " ".join(argv), exc)
-        return None
-    if result.returncode != 0:
-        log.debug(
-            "%s exited with %s: %s",
-            " ".join(argv),
-            result.returncode,
-            (result.stderr or "").strip()[:200],
-        )
-        return None
-    return result.stdout or ""
-
-
-def _mac_entry() -> _Entry | None:
-    path = _mac_plist_path()
-    try:
-        agent = plistlib.loads(path.read_bytes())
-    except FileNotFoundError:
-        return None
-    except Exception:
-        log.debug("Unreadable LaunchAgent %s", path, exc_info=True)
-        return _Entry([], active=False)  # launchd would ignore it as well
-    if not isinstance(agent, dict):
-        return _Entry([], active=False)
-    arguments = agent.get("ProgramArguments")
-    command = (
-        [str(arg) for arg in arguments]
-        if isinstance(arguments, list) and all(isinstance(a, str) for a in arguments)
-        else []
-    )
-    active = agent.get("Disabled") is not True
-    if active and command and _mac_disabled_in_launchd():
-        active = False  # launchd will not start it at login (see _mac_disabled_in_launchd)
-    return _Entry(command, active=active)
-
-
-# ---------------------------------------------------------------------- Linux
-def _linux_desktop_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME", "")
-    # The XDG spec says relative values are invalid and must be ignored.
-    root = Path(base) if base and os.path.isabs(base) else Path.home() / ".config"
-    return root / "autostart" / DESKTOP_FILE_NAME
-
-
-def _desktop_exec_arg(arg: str) -> str:
-    """Quote one argument following the Desktop Entry ``Exec`` rules.
-
-    Only double quotes are recognised (``shlex.quote``'s single quotes are
-    not), and ``%`` must be doubled because it introduces field codes.
-    """
-    if arg and not any(ch in _DESKTOP_RESERVED for ch in arg):
-        quoted = arg
-    else:
-        escaped = "".join(f"\\{ch}" if ch in _DESKTOP_QUOTED_ESCAPES else ch for ch in arg)
-        quoted = f'"{escaped}"'
-    return quoted.replace("%", "%%")
-
-
-def _desktop_string_escape(value: str) -> str:
-    """Escaping of the key file's ``string`` type, applied on top of ``Exec`` quoting."""
-    return (
-        value.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
-    )
-
-
-def _desktop_exec(command: Sequence[str]) -> str:
-    return _desktop_string_escape(" ".join(_desktop_exec_arg(arg) for arg in command))
-
-
-def _desktop_exec_split(value: str) -> list[str]:
-    """Split an ``Exec`` value into arguments (the inverse of :func:`_desktop_exec`).
-
-    Undoes the key-file string escapes, then the ``Exec`` quoting (only double
-    quotes; ``\\"``, ``\\```, ``\\$`` and ``\\\\`` inside them), then ``%%``.
-    """
-    unescaped: list[str] = []
-    chars = iter(value)
-    for char in chars:
-        if char == "\\":
-            following = next(chars, "")
-            unescaped.append(_DESKTOP_STRING_ESCAPES.get(following, "\\" + following))
-        else:
-            unescaped.append(char)
-    text = "".join(unescaped)
-    args: list[str] = []
-    current: list[str] = []
-    in_quotes = started = False
-    index = 0
-    while index < len(text):
-        char = text[index]
-        following = text[index + 1] if index + 1 < len(text) else ""
-        if in_quotes:
-            if char == "\\" and following and following in _DESKTOP_QUOTED_ESCAPES:
-                current.append(following)
-                index += 1
-            elif char == '"':
-                in_quotes = False
-            else:
-                current.append(char)
-        elif char == '"':
-            in_quotes = started = True
-        elif char in " \t":
-            if started:
-                args.append("".join(current))
-                current, started = [], False
-        else:
-            current.append(char)
-            started = True
-        index += 1
-    if started:
-        args.append("".join(current))
-    return [arg.replace("%%", "%") for arg in args]
-
-
-def _desktop_entry(command: Sequence[str]) -> str:
-    lines = [
-        "[Desktop Entry]",
-        "Type=Application",
-        "Version=1.5",
-        f"Name={APP_NAME}",
-        "Comment=Moves the mouse cursor to the monitor you are looking at",
-        f"Exec={_desktop_exec(command)}",
-        f"Icon={APP_SLUG}",
-        "Terminal=false",
-        "Hidden=false",
-        "NoDisplay=false",
-        "X-GNOME-Autostart-enabled=true",
-        # Give the panel a moment so the tray icon has somewhere to go.
-        "X-GNOME-Autostart-Delay=3",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _parse_desktop_entry(text: str) -> dict[str, str]:
-    """Keys of the ``[Desktop Entry]`` group (values unescaped only as far as needed here)."""
-    entry: dict[str, str] = {}
-    group = None
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            group = line[1:-1]
-            continue
-        if group == "Desktop Entry" and "=" in line:
-            key, _, value = line.partition("=")
-            entry.setdefault(key.strip(), value.strip())
-    return entry
-
-
-def _linux_enable(command: Sequence[str]) -> None:
-    _write_text(_linux_desktop_path(), _desktop_entry(command))
-
-
-def _linux_entry() -> _Entry | None:
-    path = _linux_desktop_path()
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
-    entry = _parse_desktop_entry(text)
-    # Desktop environments "turn off" an autostart entry by editing these keys
-    # (GNOME Tweaks, KDE System Settings) rather than deleting the file.
-    active = (
-        entry.get("Hidden", "false").lower() != "true"
-        and entry.get("X-GNOME-Autostart-enabled", "true").lower() != "false"
-    )
-    exec_value = entry.get("Exec", "")
-    return _Entry(_desktop_exec_split(exec_value) if exec_value else [], active=active)
-
-
-# ------------------------------------------------------------------- helpers
-def _write_text(path: Path, text: str) -> None:
-    atomic_write_text(path, text)
-    try:
-        # mkstemp creates 0600 files; login entries are conventionally 0644.
-        path.chmod(0o644)
-    except OSError:
-        log.debug("Could not chmod %s", path, exc_info=True)
-
-
-def _unlink(path: Path) -> None:
-    path.unlink(missing_ok=True)

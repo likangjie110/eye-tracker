@@ -20,12 +20,18 @@ from typing import Any
 import pytest
 
 from eye_tracker import APP_ID, APP_NAME, APP_SLUG, cli, paths
-from eye_tracker.platform import autostart
+from eye_tracker.platform import (
+    autostart,
+    autostart_common,
+    autostart_linux,
+    autostart_macos,
+    autostart_windows,
+)
 
-REAL_LINUX_DESKTOP_PATH = autostart._linux_desktop_path
-REAL_MAC_PLIST_PATH = autostart._mac_plist_path
-REAL_LAUNCHCTL = autostart._launchctl
-REAL_LAUNCHD_DOMAIN = autostart._mac_launchd_domain
+REAL_LINUX_DESKTOP_PATH = autostart_linux._linux_desktop_path
+REAL_MAC_PLIST_PATH = autostart_macos._mac_plist_path
+REAL_LAUNCHCTL = autostart_macos._launchctl
+REAL_LAUNCHD_DOMAIN = autostart_macos._mac_launchd_domain
 Status = autostart.Status
 LAUNCHD_DOMAIN = "gui/501"
 
@@ -81,17 +87,19 @@ def isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     def forbidden(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("the real registry must not be used in tests")
 
-    monkeypatch.setattr(autostart, "_reg_read", forbidden)
-    monkeypatch.setattr(autostart, "_reg_write_str", forbidden)
-    monkeypatch.setattr(autostart, "_reg_delete", forbidden)
+    monkeypatch.setattr(autostart_windows, "_reg_read", forbidden)
+    monkeypatch.setattr(autostart_windows, "_reg_write_str", forbidden)
+    monkeypatch.setattr(autostart_windows, "_reg_delete", forbidden)
     # launchctl changes real per-user state on a Mac: never run the real one.
-    monkeypatch.setattr(autostart, "_launchctl", FakeLaunchd())
-    monkeypatch.setattr(autostart, "_mac_launchd_domain", lambda: LAUNCHD_DOMAIN)
+    monkeypatch.setattr(autostart_macos, "_launchctl", FakeLaunchd())
+    monkeypatch.setattr(autostart_macos, "_mac_launchd_domain", lambda: LAUNCHD_DOMAIN)
     monkeypatch.setattr(
-        autostart, "_mac_plist_path", lambda: tmp_path / "LaunchAgents" / f"{APP_ID}.plist"
+        autostart_macos, "_mac_plist_path", lambda: tmp_path / "LaunchAgents" / f"{APP_ID}.plist"
     )
     monkeypatch.setattr(
-        autostart, "_linux_desktop_path", lambda: tmp_path / "autostart" / f"{APP_SLUG}.desktop"
+        autostart_linux,
+        "_linux_desktop_path",
+        lambda: tmp_path / "autostart" / f"{APP_SLUG}.desktop",
     )
     monkeypatch.delenv("APPIMAGE", raising=False)
     paths.set_base_override(None)  # the default profile unless a test says otherwise
@@ -102,7 +110,7 @@ def isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
 @pytest.fixture
 def launchd(isolate: None) -> FakeLaunchd:
     """The fake ``launchctl`` every test uses (installed by ``isolate``)."""
-    fake = autostart._launchctl
+    fake = autostart_macos._launchctl
     assert isinstance(fake, FakeLaunchd)
     return fake
 
@@ -122,9 +130,9 @@ def registry(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], Any]:
     def delete(key_path: str, name: str) -> None:
         store.pop((key_path, name), None)
 
-    monkeypatch.setattr(autostart, "_reg_read", read)
-    monkeypatch.setattr(autostart, "_reg_write_str", write)
-    monkeypatch.setattr(autostart, "_reg_delete", delete)
+    monkeypatch.setattr(autostart_windows, "_reg_read", read)
+    monkeypatch.setattr(autostart_windows, "_reg_write_str", write)
+    monkeypatch.setattr(autostart_windows, "_reg_delete", delete)
     return store
 
 
@@ -312,7 +320,7 @@ class TestWindows:
     ) -> None:
         assert autostart.is_enabled() is False
         autostart.enable()
-        value = registry[(autostart.RUN_KEY, "EyeTracker")]
+        value = registry[(autostart_common.RUN_KEY, "EyeTracker")]
         assert value == subprocess.list2cmdline([str(frozen_app), "--background"])
         assert value.startswith(f'"{frozen_app}"')  # path contains spaces
         assert autostart.is_enabled() is True
@@ -321,7 +329,7 @@ class TestWindows:
         self, registry: dict[tuple[str, str], Any], frozen_app: Path
     ) -> None:
         autostart.enable(background=False)
-        assert registry[(autostart.RUN_KEY, "EyeTracker")] == f'"{frozen_app}"'
+        assert registry[(autostart_common.RUN_KEY, "EyeTracker")] == f'"{frozen_app}"'
 
     @pytest.mark.parametrize(
         ("flag", "enabled"),
@@ -330,8 +338,8 @@ class TestWindows:
     def test_task_manager_disabled_flag(
         self, registry: dict[tuple[str, str], Any], frozen_app: Path, flag: bytes, enabled: bool
     ) -> None:
-        registry[(autostart.RUN_KEY, "EyeTracker")] = f'"{frozen_app}" --background'
-        registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] = flag
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = f'"{frozen_app}" --background'
+        registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] = flag
         assert autostart.is_enabled() is enabled
         expected = autostart.Status.ENABLED if enabled else autostart.Status.DISABLED
         assert autostart.status() is expected
@@ -339,22 +347,22 @@ class TestWindows:
     def test_enable_clears_task_manager_disabled_flag(
         self, registry: dict[tuple[str, str], Any]
     ) -> None:
-        registry[(autostart.RUN_KEY, "EyeTracker")] = "old.exe"
-        registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03" + bytes(11)
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = "old.exe"
+        registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03" + bytes(11)
         autostart.enable()
-        assert (autostart.STARTUP_APPROVED_KEY, "EyeTracker") not in registry
+        assert (autostart_common.STARTUP_APPROVED_KEY, "EyeTracker") not in registry
         assert autostart.is_enabled() is True
 
     def test_blank_value_is_not_enabled(self, registry: dict[tuple[str, str], Any]) -> None:
-        registry[(autostart.RUN_KEY, "EyeTracker")] = "   "
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = "   "
         assert autostart.is_enabled() is False
 
     def test_disable_removes_everything(self, registry: dict[tuple[str, str], Any]) -> None:
         autostart.enable()
-        registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03"
-        registry[(autostart.RUN_KEY, "OtherApp")] = "other.exe"
+        registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03"
+        registry[(autostart_common.RUN_KEY, "OtherApp")] = "other.exe"
         autostart.disable()
-        assert registry == {(autostart.RUN_KEY, "OtherApp"): "other.exe"}
+        assert registry == {(autostart_common.RUN_KEY, "OtherApp"): "other.exe"}
         assert autostart.is_enabled() is False
         autostart.disable()  # idempotent
 
@@ -362,9 +370,9 @@ class TestWindows:
         def denied(*_args: Any) -> Any:
             raise PermissionError("access denied")
 
-        monkeypatch.setattr(autostart, "_reg_read", denied)
-        monkeypatch.setattr(autostart, "_reg_write_str", denied)
-        monkeypatch.setattr(autostart, "_reg_delete", denied)
+        monkeypatch.setattr(autostart_windows, "_reg_read", denied)
+        monkeypatch.setattr(autostart_windows, "_reg_write_str", denied)
+        monkeypatch.setattr(autostart_windows, "_reg_delete", denied)
         assert autostart.is_enabled() is False
         with pytest.raises(autostart.AutostartError, match="access denied"):
             autostart.enable()
@@ -381,7 +389,7 @@ class TestWindows:
 def test_real_registry_helpers_refuse_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.undo()  # restore the real helpers; they must refuse before touching anything
     with pytest.raises(autostart.AutostartError):
-        autostart._reg_read(autostart.RUN_KEY, "EyeTracker")
+        autostart_windows._reg_read(autostart_common.RUN_KEY, "EyeTracker")
 
 
 # ---------------------------------------------------------------------- macOS
@@ -393,7 +401,7 @@ class TestMacOS:
 
     def test_enable_writes_launch_agent(self, frozen_app: Path) -> None:
         autostart.enable()
-        path = autostart._mac_plist_path()
+        path = autostart_macos._mac_plist_path()
         agent = plistlib.loads(path.read_bytes())
         assert agent == {
             "Label": APP_ID,
@@ -409,11 +417,11 @@ class TestMacOS:
     def test_enable_overwrites(self, frozen_app: Path) -> None:
         autostart.enable()
         autostart.enable(background=False)
-        agent = plistlib.loads(autostart._mac_plist_path().read_bytes())
+        agent = plistlib.loads(autostart_macos._mac_plist_path().read_bytes())
         assert agent["ProgramArguments"] == [str(frozen_app)]
 
     def test_disabled_or_corrupt_agents_are_not_enabled(self) -> None:
-        path = autostart._mac_plist_path()
+        path = autostart_macos._mac_plist_path()
         path.parent.mkdir(parents=True)
         path.write_bytes(
             plistlib.dumps({"Label": APP_ID, "ProgramArguments": ["x"], "Disabled": True})
@@ -427,12 +435,12 @@ class TestMacOS:
     def test_disable(self) -> None:
         autostart.enable()
         autostart.disable()
-        assert not autostart._mac_plist_path().exists()
+        assert not autostart_macos._mac_plist_path().exists()
         assert autostart.is_enabled() is False
         autostart.disable()
 
     def test_location_and_default_path(self) -> None:
-        assert autostart.location() == str(autostart._mac_plist_path())
+        assert autostart.location() == str(autostart_macos._mac_plist_path())
         default = REAL_MAC_PLIST_PATH()
         assert default == Path.home() / "Library" / "LaunchAgents" / f"{APP_ID}.plist"
 
@@ -466,7 +474,7 @@ class TestMacOS:
         launchd.sticky = True
         with pytest.raises(autostart.AutostartError, match="Login Items"):
             autostart.enable()
-        assert autostart._mac_plist_path().exists()  # written; launchd has the last word
+        assert autostart_macos._mac_plist_path().exists()  # written; launchd has the last word
         assert autostart.status() is Status.DISABLED
 
     def test_unreadable_launchd_state_trusts_the_plist(self, launchd: FakeLaunchd) -> None:
@@ -493,14 +501,14 @@ class TestMacOS:
     ],
 )
 def test_print_disabled_parsing(listing: str, expected: bool) -> None:
-    assert autostart._launchd_lists_disabled(listing, APP_ID) is expected
+    assert autostart_macos._launchd_lists_disabled(listing, APP_ID) is expected
 
 
 def test_real_launchctl_runner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Its error handling, with a stand-in program (the real launchctl is never run)."""
-    monkeypatch.setattr(autostart, "_LAUNCHCTL", str(tmp_path / "missing"))
+    monkeypatch.setattr(autostart_macos, "_LAUNCHCTL", str(tmp_path / "missing"))
     assert REAL_LAUNCHCTL("print-disabled", LAUNCHD_DOMAIN) is None
-    monkeypatch.setattr(autostart, "_LAUNCHCTL", sys.executable)
+    monkeypatch.setattr(autostart_macos, "_LAUNCHCTL", sys.executable)
     assert REAL_LAUNCHCTL("-c", "print('listing')") == "listing\n"
     assert REAL_LAUNCHCTL("-c", "import sys; sys.exit(3)") is None
 
@@ -527,9 +535,9 @@ class TestLinux:
         monkeypatch.setenv("APPIMAGE", str(image))
 
         autostart.enable()
-        path = autostart._linux_desktop_path()
+        path = autostart_linux._linux_desktop_path()
         text = path.read_text(encoding="utf-8")
-        entry = autostart._parse_desktop_entry(text)
+        entry = autostart_linux._parse_desktop_entry(text)
         assert text.startswith("[Desktop Entry]\n")
         assert entry["Type"] == "Application"
         assert entry["Name"] == APP_NAME
@@ -547,13 +555,13 @@ class TestLinux:
         "line", ["Hidden=true", "X-GNOME-Autostart-enabled=false", "Hidden = True"]
     )
     def test_entries_switched_off_by_the_desktop(self, line: str) -> None:
-        path = autostart._linux_desktop_path()
+        path = autostart_linux._linux_desktop_path()
         path.parent.mkdir(parents=True)
         path.write_text(f"[Desktop Entry]\nType=Application\nExec=eye-tracker\n{line}\n")
         assert autostart.is_enabled() is False
 
     def test_entry_without_exec_is_not_enabled(self) -> None:
-        path = autostart._linux_desktop_path()
+        path = autostart_linux._linux_desktop_path()
         path.parent.mkdir(parents=True)
         path.write_text("[Desktop Entry]\nType=Application\n")
         assert autostart.is_enabled() is False
@@ -562,11 +570,11 @@ class TestLinux:
         autostart.enable()
         assert autostart.is_enabled() is True
         autostart.disable()
-        assert not autostart._linux_desktop_path().exists()
+        assert not autostart_linux._linux_desktop_path().exists()
         autostart.disable()
 
     def test_location(self) -> None:
-        assert autostart.location() == str(autostart._linux_desktop_path())
+        assert autostart.location() == str(autostart_linux._linux_desktop_path())
 
     def test_default_path_honours_xdg_config_home(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -597,11 +605,11 @@ class TestDesktopExecQuoting:
         ],
     )
     def test_argument_quoting(self, arg: str, expected: str) -> None:
-        assert autostart._desktop_exec_arg(arg) == expected
+        assert autostart_linux._desktop_exec_arg(arg) == expected
 
     def test_string_escaping_is_applied_on_top(self) -> None:
         # Spec example: a literal "$" inside quotes is written as \\$ in the file.
-        assert autostart._desktop_exec(["/opt/a$b"]) == '"/opt/a\\\\$b"'
+        assert autostart_linux._desktop_exec(["/opt/a$b"]) == '"/opt/a\\\\$b"'
 
     @pytest.mark.parametrize(
         "command",
@@ -612,14 +620,14 @@ class TestDesktopExecQuoting:
         ],
     )
     def test_round_trip(self, command: list[str]) -> None:
-        assert desktop_exec_split(autostart._desktop_exec(command)) == command
+        assert desktop_exec_split(autostart_linux._desktop_exec(command)) == command
 
     def test_parse_desktop_entry_only_reads_main_group(self) -> None:
         text = (
             "# comment\n[Desktop Entry]\nName = Eye Tracker\nExec=a\n"
             "[Desktop Action x]\nExec=b\nHidden=true\n"
         )
-        entry = autostart._parse_desktop_entry(text)
+        entry = autostart_linux._parse_desktop_entry(text)
         assert entry == {"Name": "Eye Tracker", "Exec": "a"}
 
 
@@ -643,7 +651,7 @@ class TestUnsupported:
 
 # ------------------------------------------------------------------- profiles
 def run_value(registry: dict[tuple[str, str], Any]) -> list[str]:
-    return autostart._win_split(registry[(autostart.RUN_KEY, "EyeTracker")])
+    return autostart_windows._win_split(registry[(autostart_common.RUN_KEY, "EyeTracker")])
 
 
 @pytest.fixture
@@ -738,7 +746,7 @@ class TestProfiles:
     ) -> None:
         use_system(monkeypatch, "windows")
         command = [str(frozen_app), "--config-dir", str(portable).upper(), "--background"]
-        registry[(autostart.RUN_KEY, "EyeTracker")] = subprocess.list2cmdline(command)
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = subprocess.list2cmdline(command)
         assert autostart.status(portable) is Status.ENABLED
 
     def test_equals_form_is_understood(
@@ -750,7 +758,7 @@ class TestProfiles:
     ) -> None:
         use_system(monkeypatch, "windows")
         command = [str(frozen_app), f"--config-dir={portable}"]
-        registry[(autostart.RUN_KEY, "EyeTracker")] = subprocess.list2cmdline(command)
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = subprocess.list2cmdline(command)
         assert autostart.status(portable) is Status.ENABLED
         assert autostart.status() is Status.OTHER_PROFILE
 
@@ -759,7 +767,7 @@ class TestProfiles:
     ) -> None:
         use_system(monkeypatch, "macos")
         autostart.enable(config_dir=portable)
-        agent = plistlib.loads(autostart._mac_plist_path().read_bytes())
+        agent = plistlib.loads(autostart_macos._mac_plist_path().read_bytes())
         assert agent["ProgramArguments"] == autostart.launch_command(config_dir=portable)
         assert autostart.status(portable) is Status.ENABLED
         assert autostart.status() is Status.OTHER_PROFILE
@@ -787,15 +795,15 @@ def run_frozen_mac_app(monkeypatch: pytest.MonkeyPatch, executable: str) -> None
 
 
 def write_agent(arguments: list[str]) -> None:
-    path = autostart._mac_plist_path()
+    path = autostart_macos._mac_plist_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(plistlib.dumps({"Label": APP_ID, "ProgramArguments": arguments}))
 
 
 def write_desktop_entry(command: list[str], *, hidden: bool = False) -> None:
-    path = autostart._linux_desktop_path()
+    path = autostart_linux._linux_desktop_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = autostart._desktop_entry(command)
+    text = autostart_linux._desktop_entry(command)
     if hidden:  # what GNOME Tweaks / KDE do to switch an entry off
         text = text.replace("Hidden=false", "Hidden=true")
     path.write_text(text)
@@ -807,7 +815,7 @@ class TestStaleEntries:
     ) -> None:
         use_system(monkeypatch, "windows")
         gone = tmp_path / "old portable" / "EyeTracker.exe"
-        registry[(autostart.RUN_KEY, "EyeTracker")] = f'"{gone}" --background'
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = f'"{gone}" --background'
         assert autostart.status() is Status.STALE
         assert autostart.is_enabled() is False
         assert autostart.registered_command() == [str(gone), "--background"]
@@ -817,7 +825,7 @@ class TestStaleEntries:
     ) -> None:
         use_system(monkeypatch, "windows")
         monkeypatch.setattr(autostart.shutil, "which", lambda name: f"/usr/bin/{name}")
-        registry[(autostart.RUN_KEY, "EyeTracker")] = "eye-tracker-gui --background"
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = "eye-tracker-gui --background"
         assert autostart.status() is Status.ENABLED
         monkeypatch.setattr(autostart.shutil, "which", lambda name: None)
         assert autostart.status() is Status.STALE
@@ -846,7 +854,7 @@ class TestStaleEntries:
         monkeypatch.setattr(autostart, "_is_read_only_volume", lambda path: True)
         with pytest.raises(autostart.AutostartError, match="Applications folder"):
             autostart.enable()
-        assert not autostart._mac_plist_path().exists()
+        assert not autostart_macos._mac_plist_path().exists()
 
     def test_macos_app_on_a_writable_external_volume_is_fine(
         self, monkeypatch: pytest.MonkeyPatch
@@ -904,9 +912,9 @@ class TestRefresh:
 
     def test_up_to_date_entry_is_not_rewritten(self, appimage: Path) -> None:
         autostart.enable()
-        before = autostart._linux_desktop_path().stat().st_mtime_ns
+        before = autostart_linux._linux_desktop_path().stat().st_mtime_ns
         assert autostart.refresh() is False
-        assert autostart._linux_desktop_path().stat().st_mtime_ns == before
+        assert autostart_linux._linux_desktop_path().stat().st_mtime_ns == before
 
     def test_switched_off_entry_is_left_alone(self, appimage: Path) -> None:
         old = str(appimage.with_name("gone.AppImage"))
@@ -917,7 +925,7 @@ class TestRefresh:
 
     def test_no_entry_is_not_created(self, appimage: Path) -> None:
         assert autostart.refresh() is False
-        assert not autostart._linux_desktop_path().exists()
+        assert not autostart_linux._linux_desktop_path().exists()
 
     def test_source_run_does_not_take_over_a_working_entry(
         self, monkeypatch: pytest.MonkeyPatch, source_python: Path, tmp_path: Path
@@ -948,12 +956,12 @@ class TestRefresh:
     ) -> None:
         use_system(monkeypatch, "windows")
         installer_value = f'"{str(frozen_app).upper()}" --background'
-        registry[(autostart.RUN_KEY, "EyeTracker")] = installer_value
-        registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x02" + bytes(11)
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = installer_value
+        registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x02" + bytes(11)
         assert autostart.refresh() is False
-        assert registry[(autostart.RUN_KEY, "EyeTracker")] == installer_value
+        assert registry[(autostart_common.RUN_KEY, "EyeTracker")] == installer_value
         # The Task Manager state is untouched as well.
-        assert (autostart.STARTUP_APPROVED_KEY, "EyeTracker") in registry
+        assert (autostart_common.STARTUP_APPROVED_KEY, "EyeTracker") in registry
 
     def test_task_manager_disabled_entry_is_not_revived(
         self,
@@ -963,10 +971,12 @@ class TestRefresh:
         tmp_path: Path,
     ) -> None:
         use_system(monkeypatch, "windows")
-        registry[(autostart.RUN_KEY, "EyeTracker")] = f'"{tmp_path / "gone.exe"}"'
-        registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03" + bytes(11)
+        registry[(autostart_common.RUN_KEY, "EyeTracker")] = f'"{tmp_path / "gone.exe"}"'
+        registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] = b"\x03" + bytes(11)
         assert autostart.refresh() is False
-        assert registry[(autostart.STARTUP_APPROVED_KEY, "EyeTracker")] == b"\x03" + bytes(11)
+        assert registry[(autostart_common.STARTUP_APPROVED_KEY, "EyeTracker")] == b"\x03" + bytes(
+            11
+        )
 
     def test_macos_entry_made_from_the_disk_image_is_moved_to_applications(
         self, monkeypatch: pytest.MonkeyPatch, frozen_app: Path
@@ -997,7 +1007,7 @@ class TestRefresh:
         def read_only(path: Path, text: str) -> None:
             raise PermissionError("read-only home")
 
-        monkeypatch.setattr(autostart, "_write_text", read_only)
+        monkeypatch.setattr(autostart_linux, "_write_text", read_only)
         with caplog.at_level(logging.WARNING, logger="eye_tracker.platform.autostart"):
             assert autostart.refresh() is False
         assert "Could not update" in caplog.text
@@ -1016,7 +1026,7 @@ WINDOWS_COMMANDS = [
 class TestCommandParsing:
     @pytest.mark.parametrize("command", WINDOWS_COMMANDS)
     def test_windows_round_trip(self, command: list[str]) -> None:
-        assert autostart._win_split(subprocess.list2cmdline(command)) == command
+        assert autostart_windows._win_split(subprocess.list2cmdline(command)) == command
 
     @pytest.mark.parametrize(
         ("line", "expected"),
@@ -1030,7 +1040,7 @@ class TestCommandParsing:
         ],
     )
     def test_windows_rules(self, line: str, expected: list[str]) -> None:
-        assert autostart._win_split(line) == expected
+        assert autostart_windows._win_split(line) == expected
 
     @pytest.mark.skipif(sys.platform != "win32", reason="compares with the Windows parser")
     @pytest.mark.parametrize("command", WINDOWS_COMMANDS)
@@ -1051,7 +1061,7 @@ class TestCommandParsing:
             reference = [argv[i] for i in range(count.value)]
         finally:
             kernel32.LocalFree(ctypes.cast(argv, wintypes.HLOCAL))
-        assert autostart._win_split(line) == reference
+        assert autostart_windows._win_split(line) == reference
 
     @pytest.mark.parametrize(
         "command",
@@ -1062,13 +1072,17 @@ class TestCommandParsing:
         ],
     )
     def test_desktop_exec_round_trip(self, command: list[str]) -> None:
-        value = autostart._desktop_exec(command)
-        assert autostart._desktop_exec_split(value) == command
-        assert autostart._desktop_exec_split(value) == desktop_exec_split(value)
+        value = autostart_linux._desktop_exec(command)
+        assert autostart_linux._desktop_exec_split(value) == command
+        assert autostart_linux._desktop_exec_split(value) == desktop_exec_split(value)
 
     def test_desktop_exec_split_is_lenient_with_foreign_entries(self) -> None:
-        assert autostart._desktop_exec_split('sh -c "echo \\"hi\\""') == ["sh", "-c", 'echo "hi"']
-        assert autostart._desktop_exec_split("app %U") == ["app", "%U"]
+        assert autostart_linux._desktop_exec_split('sh -c "echo \\"hi\\""') == [
+            "sh",
+            "-c",
+            'echo "hi"',
+        ]
+        assert autostart_linux._desktop_exec_split("app %U") == ["app", "%U"]
 
     def test_profile_helpers(self) -> None:
         command = ["app", "--config-dir", "/a", "--background", "--config-dir=/b"]
