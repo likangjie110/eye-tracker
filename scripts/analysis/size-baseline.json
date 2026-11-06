@@ -6,11 +6,11 @@
     "class_lines": 300
   },
   "files": {
-    "src/eye_tracker/app.py": 926,
+    "src/eye_tracker/app.py": 673,
     "src/eye_tracker/cli.py": 622,
     "src/eye_tracker/config.py": 623,
     "src/eye_tracker/diagnostics.py": 1319,
-    "src/eye_tracker/engine/controller.py": 3073,
+    "src/eye_tracker/engine/controller.py": 2535,
     "src/eye_tracker/ipc.py": 953,
     "src/eye_tracker/platform/hotkeys_base.py": 823,
     "src/eye_tracker/platform/hotkeys_macos.py": 722,
@@ -20,8 +20,7 @@
     "src/eye_tracker/platform/win_uia.py": 750,
     "src/eye_tracker/platform/windows_api.py": 839,
     "src/eye_tracker/ui/settings_dialog.py": 639,
-    "src/eye_tracker/ui/tray.py": 702,
-    "src/eye_tracker/vision/backends/facemesh_backend.py": 619
+    "src/eye_tracker/ui/tray.py": 702
   },
   "functions": {
     "src/eye_tracker/cli.py::build_parser": 114,
@@ -52,15 +51,14 @@
     "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend._acquire": 61,
     "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend._settle": 79,
     "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend._with_landmarks": 72,
-    "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend.process": 77,
     "src/eye_tracker/vision/backends/lite_backend.py::LiteBackend.process": 69,
     "src/eye_tracker/vision/camera.py::Camera.open": 72,
     "src/eye_tracker/vision/worker.py::VisionWorker.__init__": 61,
     "src/eye_tracker/vision/worker.py::VisionWorker._cycle": 111
   },
   "classes": {
-    "src/eye_tracker/app.py::EyeTrackerApp": 733,
-    "src/eye_tracker/engine/controller.py::Controller": 2751,
+    "src/eye_tracker/app.py::EyeTrackerApp": 479,
+    "src/eye_tracker/engine/controller.py::Controller": 2216,
     "src/eye_tracker/gaze/model.py::GazeModel": 339,
     "src/eye_tracker/platform/hotkeys_macos.py::_Carbon": 301,
     "src/eye_tracker/platform/hotkeys_x11.py::X11HotkeyManager": 408,
@@ -73,7 +71,7 @@
     "src/eye_tracker/ui/settings_dialog.py::SettingsDialog": 410,
     "src/eye_tracker/ui/tray.py::TrayIcon": 581,
     "src/eye_tracker/ui/wizard.py::FirstRunWizard": 491,
-    "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend": 441,
+    "src/eye_tracker/vision/backends/facemesh_backend.py::FaceMeshBackend": 363,
     "src/eye_tracker/vision/worker.py::VisionWorker": 508
   }
 }
