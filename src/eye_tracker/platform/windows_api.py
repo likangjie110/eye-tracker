@@ -44,7 +44,6 @@ WM_SYSCOMMAND = 0x0112
 SC_MONITORPOWER = 0xF170
 MONITOR_POWER_OFF = 2
 ES_DISPLAY_REQUIRED = 0x00000002
-ASFW_ANY = 0xFFFFFFFF
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
 MOUSEEVENTF_MOVE = 0x0001
@@ -511,8 +510,8 @@ class _Win32:
         flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
         return bool(self._SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, flags))
 
-    def allow_set_foreground_any(self) -> None:
-        self._AllowSetForegroundWindow(ASFW_ANY)
+    def allow_set_foreground(self, pid: int) -> None:
+        self._AllowSetForegroundWindow(pid)
 
     def current_thread_id(self) -> int:
         return int(self._GetCurrentThreadId())

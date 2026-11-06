@@ -165,7 +165,7 @@ class FakeWin32:
         self.calls.append(("bring_to_top", hwnd))
         return True
 
-    def allow_set_foreground_any(self) -> None:
+    def allow_set_foreground(self, pid: int) -> None:
         self.calls.append(("allow_any",))
 
     def current_thread_id(self) -> int:

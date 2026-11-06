@@ -279,7 +279,7 @@ class WindowsPlatform(PlatformServices):
             # window as hung after ~5 s; bring_to_top never waits regardless.)
             log.debug("Not activating window %#x: it is not responding", hwnd)
             return False
-        api.allow_set_foreground_any()
+        api.allow_set_foreground(os.getpid())  # only this app, never ASFW_ANY (TD-SEC-011)
 
         if self._activate_attached(hwnd):
             return True
