@@ -76,8 +76,9 @@ tag vX.Y.Z
 | 模型校验 | `uv run python scripts/fetch_models.py --check` | ✅ 通过（sha256 verified） |
 | 测试 | `uv run pytest -q` | ✅ 2952 passed / 55 skipped（35.59 s，2026-11-06 本机） |
 | 配置文档同步 | `uv run python scripts/gen_config_docs.py --check`（另有 `tests/test_docs.py`） | ✅ 通过（阶段 3 起 CI 独立 step） |
-| 大小门禁 | `uv run python scripts/lint_size.py --check` | ✅ 通过（存量冻结，基线 22 文件 / 41 函数 / 16 类） |
-| 结构测试 | `uv run python -m pytest tests/test_architecture.py -q` | ✅ 通过（9 用例，含负例） |
+| 大小门禁 | `uv run python scripts/lint_size.py --check` | ✅ 通过（存量冻结，基线持续收紧） |
+| 结构测试 | `uv run python -m pytest tests/test_architecture.py -q` | ✅ 通过（含负例） |
+| Workflow lint | `uv run python scripts/check_workflows.py` | ✅ 通过（5 个 workflow：pin/timeout/injection/pull_request_target/弃用命令） |
 | 打包脚本 lint | `shellcheck` + `desktop-file-validate`（CI 安装工具后跑） | ⚠️ 本机未验证（工具未安装，CONTRIBUTING 也未给命令） |
 | Windows 安装/升级/卸载冒烟 | —— | ❌ CI-only：`build.yml:303-425` 内联 PowerShell，无本地脚本 |
 | 发布校验 / attestation / 建 Release | —— | ❌ CI-only（设计使然，不可本地复现） |

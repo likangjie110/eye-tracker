@@ -38,6 +38,7 @@ Layer 2 — orchestration
   ipc.py                single-instance guard and local command channel
   ipc_runtime.py        private runtime directory for the local socket
   diagnostics.py        doctor / bench aggregation
+  diagnostics_rules.py  the plain-language problem rules it aggregates
 
 Layer 3 — presentation
   ui/               Qt widgets; they call the Controller and own no business logic

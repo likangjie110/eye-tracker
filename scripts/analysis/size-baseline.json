@@ -8,8 +8,7 @@
   "files": {
     "src/eye_tracker/app.py": 673,
     "src/eye_tracker/cli.py": 622,
-    "src/eye_tracker/config.py": 623,
-    "src/eye_tracker/diagnostics.py": 1319,
+    "src/eye_tracker/diagnostics.py": 1236,
     "src/eye_tracker/engine/controller.py": 1992,
     "src/eye_tracker/ipc.py": 953,
     "src/eye_tracker/platform/hotkeys_base.py": 823,
@@ -26,7 +25,6 @@
     "src/eye_tracker/cli.py::build_parser": 114,
     "src/eye_tracker/diagnostics.py::_bench_mode": 81,
     "src/eye_tracker/diagnostics.py::_calibration_section": 61,
-    "src/eye_tracker/diagnostics.py::_problems": 108,
     "src/eye_tracker/diagnostics.py::run_bench": 68,
     "src/eye_tracker/engine/controller.py::Controller.__init__": 206,
     "src/eye_tracker/engine/controller.py::Controller.apply_settings": 63,
