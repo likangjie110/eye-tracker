@@ -25,6 +25,7 @@ import contextlib
 import hashlib
 import hmac
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -47,6 +48,9 @@ _UNINSTALLER = "unins000.exe"
 SETUP_ARGUMENTS = ("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
 _CHECKSUM_LINE = re.compile(r"^([0-9a-fA-F]{64}) [ *](\S.*?)\s*$")
 _DETACHED_PROCESS = 0x00000008
+#: Sidecar written next to the installer so a later launch can re-verify it.
+_CHECKSUM_SUFFIX = ".sha256"
+_INSTALLER_NAME = re.compile(r"^EyeTracker-[0-9A-Za-z.+-]+-windows-x64-setup\.exe$")
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
@@ -124,6 +128,12 @@ def download_installer(
         if not hmac.compare_digest(file_sha256(part), expected):
             raise UpdateError("The download does not match its checksum and was discarded.")
         part.replace(final)
+        # Remember the verified checksum next to the file: launch_installer re-checks
+        # it right before the setup starts (TD-SEC-002).
+        sidecar = final.with_name(final.name + _CHECKSUM_SUFFIX)
+        sidecar.write_text(expected + "\n", encoding="ascii")
+        with contextlib.suppress(OSError):
+            os.chmod(sidecar, 0o600)
     except BaseException:
         with contextlib.suppress(OSError):
             part.unlink()
@@ -131,12 +141,39 @@ def download_installer(
     return final
 
 
+def _expected_checksum(installer: Path) -> str:
+    sidecar = installer.with_name(installer.name + _CHECKSUM_SUFFIX)
+    try:
+        value = sidecar.read_text(encoding="ascii").strip().lower()
+    except OSError:
+        raise UpdateError("The download cannot be verified any more; download it again.") from None
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise UpdateError("The download cannot be verified any more; download it again.")
+    return value
+
+
 def launch_installer(installer: Path) -> None:
     """Start the setup program in the background. It asks the running app to quit,
-    replaces the files and starts the app again; this process does not wait."""
+    replaces the files and starts the app again; this process does not wait.
+
+    The path must be the verified download in this app's updates folder and its
+    SHA-256 is checked again immediately before starting it (TD-SEC-002).
+    """
     if install_kind() != KIND_SETUP:
         raise UpdateError("This copy of the app is not installed by its setup program.")
-    command = [str(installer), *SETUP_ARGUMENTS]
+    folder = updates_dir().resolve()
+    try:
+        resolved = installer.resolve(strict=True)
+    except OSError as exc:
+        raise UpdateError(f"The downloaded installer is missing: {exc}") from None
+    if resolved.parent != folder or not _INSTALLER_NAME.fullmatch(resolved.name):
+        raise UpdateError("Refusing to start an installer outside the updates folder.")
+    if installer.is_symlink():
+        raise UpdateError("Refusing to start a symlinked installer.")
+    expected = _expected_checksum(resolved)
+    if not hmac.compare_digest(file_sha256(resolved), expected):
+        raise UpdateError("The installer changed after it was downloaded; download it again.")
+    command = [str(resolved), *SETUP_ARGUMENTS]
     log.info("Starting the installer %s", installer.name)
     flags = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     subprocess.Popen(

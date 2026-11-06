@@ -78,7 +78,7 @@ def test_a_verified_download_is_kept(tmp_path: Path) -> None:
     )
     assert path == tmp_path / NAME
     assert path.read_bytes() == BODY
-    assert sorted(p.name for p in tmp_path.iterdir()) == [NAME]  # no .part left
+    assert sorted(p.name for p in tmp_path.iterdir()) == [NAME, NAME + ".sha256"]  # no .part
     assert seen[-1] == (len(BODY), len(BODY))
 
 
@@ -134,7 +134,7 @@ def test_an_older_download_is_replaced(tmp_path: Path) -> None:
     (tmp_path / (NAME + ".part")).write_bytes(b"older")
     path = installer.download_installer(release(), Fetcher(transport()), directory=tmp_path)
     assert path.read_bytes() == BODY
-    assert [p.name for p in tmp_path.iterdir()] == [NAME]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [NAME, NAME + ".sha256"]
 
 
 def test_leftover_downloads_are_removed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,18 +171,69 @@ def test_the_installed_app_is_told_by_its_uninstaller(
 
 
 # --------------------------------------------------------------------------- launch
+def _prepared(folder: Path, data: bytes = BODY, name: str = NAME) -> Path:
+    """A verified download: the installer plus its checksum sidecar."""
+    path = folder / name
+    path.write_bytes(data)
+    (folder / (name + ".sha256")).write_text(hashlib.sha256(data).hexdigest() + "\n")
+    return path
+
+
 def test_the_setup_is_started_silently_and_detached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[tuple[list[str], dict[str, Any]]] = []
     monkeypatch.setattr(installer, "install_kind", lambda: installer.KIND_SETUP)
+    monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path)
     monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: calls.append((cmd, kw)) or object())
-    path = tmp_path / NAME
+    path = _prepared(tmp_path)
     installer.launch_installer(path)
     command, options = calls[0]
     assert command == [str(path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
     assert options["close_fds"] is True
     assert options["stdin"] is subprocess.DEVNULL
+
+
+def test_a_changed_installer_is_not_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TD-SEC-002: re-check the checksum right before launching."""
+    started: list[object] = []
+    monkeypatch.setattr(installer, "install_kind", lambda: installer.KIND_SETUP)
+    monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: started.append(a))
+    path = _prepared(tmp_path)
+    path.write_bytes(BODY + b"tampered")  # sidecar still names the old hash
+    with pytest.raises(installer.UpdateError, match="changed after"):
+        installer.launch_installer(path)
+    assert started == []
+
+
+def test_an_installer_outside_the_updates_folder_is_not_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[object] = []
+    monkeypatch.setattr(installer, "install_kind", lambda: installer.KIND_SETUP)
+    monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path / "updates")
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: started.append(a))
+    (tmp_path / "elsewhere").mkdir()
+    outside = _prepared(tmp_path / "elsewhere")
+    with pytest.raises(installer.UpdateError, match="outside"):
+        installer.launch_installer(outside)
+    assert started == []
+
+
+def test_an_installer_without_its_checksum_is_not_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[object] = []
+    monkeypatch.setattr(installer, "install_kind", lambda: installer.KIND_SETUP)
+    monkeypatch.setattr(installer, "updates_dir", lambda: tmp_path)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: started.append(a))
+    (tmp_path / NAME).write_bytes(BODY)
+    with pytest.raises(installer.UpdateError, match="cannot be verified"):
+        installer.launch_installer(tmp_path / NAME)
+    assert started == []
 
 
 @pytest.mark.parametrize("kind", [installer.KIND_PORTABLE, installer.KIND_UNSUPPORTED])
