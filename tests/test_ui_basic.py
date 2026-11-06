@@ -33,7 +33,6 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
 from eye_tracker import __version__
 from eye_tracker.config import Settings
-from eye_tracker.platform import get_platform
 from eye_tracker.platform.base import PlatformServices
 from eye_tracker.platform.hotkeys import Hotkey, HotkeyManager, format_hotkey, parse_hotkey
 from eye_tracker.types import (
@@ -109,8 +108,10 @@ class FakeController(QObject):
         #: The ``owner`` of every set_preview call.
         self.preview_owners: list[object | None] = []
         self.hotkey_manager: FakeHotkeyManager | None = None
-        # The process platform, like the UI's fallback when a controller has none.
-        self.platform = get_platform()
+        # The UI treats a missing platform as "capabilities unknown" (input_idle
+        # defaults to true), which is the deterministic behaviour these tests expect
+        # on headless Linux, macOS and Windows alike.
+        self.platform: PlatformServices | None = None
         self.yield_reason = ""
         self.calibration_reason = ""
         self._monitors = list(monitors)
