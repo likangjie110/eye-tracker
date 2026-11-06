@@ -71,6 +71,9 @@ jobs:
       - name: Configuration reference is up to date
         run: uv run --no-sync python scripts/gen_config_docs.py --check
 
+      - name: Workflow lint (pins, timeouts, injection)
+        run: uv run --no-sync python scripts/check_workflows.py
+
       - name: Size gate (file / function / class limits)
         run: uv run --no-sync python scripts/lint_size.py --check
 

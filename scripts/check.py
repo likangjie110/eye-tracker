@@ -56,6 +56,7 @@ CHECKS: tuple[Check, ...] = (
     Check("privacy gate", (PYTHON, "scripts/check_privacy.py")),
     Check("face models", (PYTHON, "scripts/fetch_models.py", "--check")),
     Check("config docs", (PYTHON, "scripts/gen_config_docs.py", "--check")),
+    Check("workflows", (PYTHON, "scripts/check_workflows.py")),
     Check("size gate", (PYTHON, "scripts/lint_size.py", "--check")),
     Check(
         "pytest",

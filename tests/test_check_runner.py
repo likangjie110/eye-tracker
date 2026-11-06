@@ -32,6 +32,7 @@ def test_gate_list_covers_every_check() -> None:
         "privacy gate",
         "face models",
         "config docs",
+        "workflows",
         "size gate",
         "pytest",
     }
