@@ -57,7 +57,11 @@ CHECKS: tuple[Check, ...] = (
     Check("face models", (PYTHON, "scripts/fetch_models.py", "--check")),
     Check("config docs", (PYTHON, "scripts/gen_config_docs.py", "--check")),
     Check("size gate", (PYTHON, "scripts/lint_size.py", "--check")),
-    Check("pytest", (PYTHON, "-m", "pytest", "-q"), slow=True),
+    Check(
+        "pytest",
+        (PYTHON, "-m", "pytest", "-q", "--cov=eye_tracker", "--cov-report=term-missing"),
+        slow=True,
+    ),
 )
 
 

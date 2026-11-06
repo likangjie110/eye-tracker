@@ -24,7 +24,8 @@ This file is a **map, not a manual**. Read it first, then follow the one link yo
 uv sync --locked                                   # install exactly the lock file
 uv run eye-tracker                                 # start the tray app
 uv run eye-tracker doctor                          # environment/permission report
-uv run pytest -q                                   # 2952 passed / 55 skipped (macOS, 2026-11-06)
+uv run pytest -q                                   # 3054 passed / 55 skipped (macOS, 2026-11-06)
+uv run pytest -q --cov=eye_tracker                 # coverage gate, floor 89 % (ratchet)
 uv run ruff check .                                # lint
 uv run ruff format --check .                       # formatting
 uv run mypy                                        # types, as on Linux (the default)

@@ -122,4 +122,7 @@ jobs:
         run: uv sync --locked
 
       - name: Run the tests
-        run: uv run --no-sync pytest -q --durations=15
+        env:
+          # One matrix entry enforces the coverage ratchet (D1); the rest stay fast.
+          COVERAGE_ARGS: ${{ (runner.os == 'Linux' && matrix.python-version == '3.12') && '--cov=eye_tracker --cov-report=term' || '' }}
+        run: uv run --no-sync pytest -q --durations=15 $COVERAGE_ARGS

@@ -542,6 +542,20 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | P5-5 | 性能冒烟（可选，待 D7） | L | bench 脚本 + 阈值 | `eye-tracker bench` 的 CPU/延迟阈值在 CI 或 nightly 可执行；连续两次运行稳定 |
 | P5-6 | 完成定义自检（§11.1） | L + R + H | `docs/QUALITY_SCORE.md` 更新 + 验收记录 | §11.1 的 10 条逐条勾选并附证据路径 |
 
+**阶段 5 进度（2026-11-06）**
+
+- P5-1 完成：`pytest-cov` 加入 dev 依赖；首次基线 **89 %**（macOS，21,991 statements /
+  2,316 missed，3,054 passed / 55 skipped）。配置在 `pyproject.toml` 的
+  `[tool.coverage.run]` / `[tool.coverage.report]`。
+- P5-2 完成：`fail_under = 89`（基线向下取整，只许上调的 ratchet）；本地 `scripts/check.py`
+  的 pytest gate 默认带 `--cov`；CI 仅在 ubuntu-24.04 / Python 3.12 一个矩阵项执行覆盖率
+  （其他项保持速度），低于阈值即失败。
+- P5-4 完成：`tests/test_architecture.py`、`tests/test_docs.py`、`scripts/lint_size.py` 均随
+  pytest / lint job 在 CI blocking，本地由 `scripts/check.py` 一条命令覆盖。
+- P5-3 进行中：`update/winhttp.py` 已补 16 个行为测试（TD-TEST-002 关闭）；UI 测试密度仍偏低
+  （25.2 用例/千行），按剩余轮次补关键路径。
+- P5-5 按 D7 暂不设硬阈值（bench 只记趋势）。
+
 **阶段 5 验收**：覆盖率达标；结构性规则被自动拦截；§11.1 完成定义全部满足。
 通过后按 §14 执行“收官拆解”（单独提交，需 H 确认）。
 
@@ -624,4 +638,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B3 | 步骤 3：wizard 拆出 wizard_pages（465），wizard 999→572；公共再导出保持 | `d07e618` | 行为不变（仅私有 helper 的测试引用改指新模块）；CI run `42166148422` 绿 |
 | 2026-11-06 | 阶段 4 · B7 | 步骤 1：release.yml 增加 test job（build needs test）；build.yml prepare 校验 tag 在 main 祖先 + numeric 版本；guard 测试 | `43f0342` | 关闭 CI 审计唯一 P1（TD-CI-001）与 TD-CI-003；发布方式仍为直接正式发布；CI run `42166713950` 绿 |
 | 2026-11-06 | 阶段 4 · B7 | 步骤 2：`tests/test_update_winhttp.py` 16 个用例，fake WinHTTP 覆盖调用序列/选项/头解析/分块读取/全部失败路径 | 待提交 | 关闭 TD-TEST-002（唯一网络代码零行为测试） |
+| 2026-11-06 | 阶段 5 | P5-1/P5-2/P5-4：pytest-cov 基线 89%（floor 门禁 + ratchet）；check.py pytest 带覆盖率；CI 单矩阵项执行 | 待提交 | 关闭「覆盖率目标与团队成本」遗留；UI 密度补测继续 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |

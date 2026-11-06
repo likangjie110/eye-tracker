@@ -148,6 +148,9 @@ tag vX.Y.Z
   `build.yml` 的 `prepare` 校验 tag 必须指向 `origin/main` 的祖先，且 `__version__` 必须含
   纯数字版本（Windows/CFBundleVersion 需要）。
 - **发布方式未变**：仍为 tag 直接正式发布（非 draft），平台范围与签名行为保持原样（D11）。
+- **覆盖率门禁（阶段 5 / D1）**：`pytest-cov` 基线 89 %，`fail_under = 89` 且只许上调；
+  本地 `scripts/check.py` 的 pytest gate 默认执行覆盖率，CI 只在 ubuntu-24.04 / Python 3.12
+  一个矩阵项加 `--cov`（其余保持速度），低于阈值即红灯。
 - 新增 `scripts/lint_size.py` + `scripts/analysis/size-baseline.json`：文件 >600 行、
   函数 >60 行、类 >300 行必须已在基线内，基线只许收缩（D10）。
 - 新增 `tests/test_architecture.py`：解析全仓 import 图，强制 `ARCHITECTURE.md` 的 R1–R5、
@@ -175,6 +178,7 @@ tag vX.Y.Z
 | 文档索引/版本漂移被拒绝 | `tests/test_docs.py::test_docs_index_check_detects_a_missing_entry`、`test_stale_version_check_detects_drift` |
 | 隐私边界可拦截 | `tests/test_privacy.py`（既有 291 个参数化用例，含注入违规） |
 | 发布前测试门禁 / tag 在 main 上 / numeric 版本 | `tests/test_build_scripts.py::test_release_requires_the_test_suite_and_a_main_ancestor` |
+| 覆盖率低于阈值 | `pytest --cov` + `[tool.coverage.report].fail_under`（本地实测：注入未覆盖代码即失败） |
 
 ### 4.4 与现有配置的关系
 
