@@ -623,4 +623,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B3 | 步骤 2：calibration_window 拆出 model（196）/widgets（327）/surface（371），facade 1767→997；类本身待拆 | `365cf22` | 行为不变（测试未改）；CI run `42165503750` 绿 |
 | 2026-11-06 | 阶段 4 · B3 | 步骤 3：wizard 拆出 wizard_pages（465），wizard 999→572；公共再导出保持 | `d07e618` | 行为不变（仅私有 helper 的测试引用改指新模块）；CI run `42166148422` 绿 |
 | 2026-11-06 | 阶段 4 · B7 | 步骤 1：release.yml 增加 test job（build needs test）；build.yml prepare 校验 tag 在 main 祖先 + numeric 版本；guard 测试 | `43f0342` | 关闭 CI 审计唯一 P1（TD-CI-001）与 TD-CI-003；发布方式仍为直接正式发布；CI run `42166713950` 绿 |
+| 2026-11-06 | 阶段 4 · B7 | 步骤 2：`tests/test_update_winhttp.py` 16 个用例，fake WinHTTP 覆盖调用序列/选项/头解析/分块读取/全部失败路径 | 待提交 | 关闭 TD-TEST-002（唯一网络代码零行为测试） |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |

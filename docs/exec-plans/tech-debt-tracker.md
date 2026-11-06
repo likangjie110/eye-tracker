@@ -99,7 +99,7 @@
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | TD-TEST-001 | 无覆盖率工具、配置与门禁 | `pyproject.toml:71-76`；`ci.yml:118-119` | P1 | `coverage` 未安装（ModuleNotFoundError）；dev 组仅 pytest/ruff/mypy；CI 仅 `pytest -q`，无 `--cov`/阈值 | 加 pytest-cov；先记录基线再 ratchet；CI 阈值门禁（阈值见 D1） | 无 | 阶段 5；注入低覆盖必须失败 | 未开始 |
-| TD-TEST-002 | `update/winhttp.py` 零行为测试 | `src/eye_tracker/update/winhttp.py:1-175`；`tests/test_update_fetch.py:12-14`；`tests/test_privacy.py:90-97` | P1 | 唯一网络代码，175 行 ctypes/WinHTTP；测试只用 FakeTransport，privacy 测试只扫 allowlist 文本 | 仿 `test_platform_windows.py` 的 FakeWin32，用假 `ctypes.WinDLL` 覆盖 TLS/证书/代理/重定向/错误码 | 无 | B7；新增测试 | 未开始 |
+| TD-TEST-002 | `update/winhttp.py` 零行为测试 | `src/eye_tracker/update/winhttp.py:1-175`；`tests/test_update_fetch.py:12-14`；`tests/test_privacy.py:90-97` | P1 | 唯一网络代码，175 行 ctypes/WinHTTP；测试只用 FakeTransport，privacy 测试只扫 allowlist 文本 | 仿 `test_platform_windows.py` 的 FakeWin32，用假 `ctypes.WinDLL` 覆盖 TLS/证书/代理/重定向/错误码 | 无 | B7；新增测试 | 已完成（阶段 4 B7，2026-11-06） |
 | TD-TEST-003 | Windows 专属与 Inno Setup 用例在本地/PR CI 跳过 | `tests/test_build_scripts.py:572`；`ci.yml:78-96`；`build.yml:290` | P2 | 55 skip 中 33 个 Windows；PR test job 不装 Inno Setup；build job 装 choco 但不跑 pytest | bundle/额外 Windows job 装 Inno Setup 后跑该用例；或标注仅 release 验证 | 无 | B7 | 未开始 |
 | TD-TEST-004 | 3 个用例完全没有断言 | `tests/test_facemesh.py:411`；`tests/test_hotkeys.py:899`；`tests/test_update_service.py:238-244` | P2 | AST 扫描 1,994 个测试函数 → 3 个零 assert/零 raises | 至少断言状态或副作用 | 无 | 阶段 5 | 未开始 |
 | TD-TEST-005 | 9 个用例仅有弱断言（is not None/isinstance） | `tests/test_hotkeys.py:350`；`tests/test_platform_windows.py:355,359`；`tests/test_backends.py:115` 等 | P2 | AST 扫描 | 断言具体值/类型分支/副作用 | 无 | 阶段 5 | 未开始 |
