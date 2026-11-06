@@ -4,7 +4,7 @@
 - 代码基线：`harnessing` 分支，起点 commit `9644527`（= `main` = tag `v0.3.0`）
 - 来源：机械扫描（`scripts/analysis/scan_metrics.py`）+ 三路只读审计
   （CI/构建发布、测试与文档、安全与性能）+ 人工复核
-- 字段定义与优先级：见 `docs/turn-project-to-harness-rules.md` 附录 B
+- 字段定义与优先级：见归档蓝图 `docs/exec-plans/completed/harness-2026-11-06.md` 附录 B
   - **P0**：影响正确性/安全性/可用性，或阻塞后续所有改造 → 当前批次内必须解决
   - **P1**：显著抬升维护成本或缺陷概率，不立即阻断 → 计划内排期
   - **P2**：体验与整洁度问题 → 有空再做，登记不丢
@@ -89,7 +89,7 @@
 | TD-DOC-011 | 双 README 的 PERF 数据块手工重复 | `README.md:149-160`；`README.tr.md:151-162` | P2 | 数值一致但无生成/校验；`<!-- PERF:BEGIN/END -->` 无脚本引用 | 由 benchmark 结果生成两语言块，或加测试比较数值 | 无 | B4 | 未开始 |
 | TD-DOC-012 | 站点文档链接是绝对 GitHub `main` URL，无校验 | `site/index.html:248,352,360,455`；`tests/test_site.py:82-100` | P2 | 站点测试只查构建产物本地 src/href；docs 重组会静默断链 | 站点构建/测试把 `blob/main/docs/*.md` 映射回仓库路径校验存在 | 无 | B7 | 未开始 |
 | TD-DOC-013 | 文档门禁只有 6 个用例，缺版本/锚点/命令/新鲜度校验 | `tests/test_docs.py:26,31,47,62,87,98` | P1 | 只校验配置同步、hotkey 渲染、presence 数字、setting 有 doc、相对链接/图片存在；`:91` 丢弃 anchor；D.2 的过期内容全部漏检 | 阶段 2/3 扩展：版本一致性、锚点、代码块命令、双语结构、必填节、docs/index 完整性；加 markdownlint/外链（定期） | 无 | B0/阶段 3；注入漂移必须失败 | 处理中（阶段 2 已扩展 15 用例；锚点/外链/markdownlint 已排期阶段 5 收尾） |
-| TD-DOC-014 | 施工期规则文档（1,101 行）被 `docs/*.md` 门禁 glob 纳入产品文档检查 | `docs/turn-project-to-harness-rules.md`；`tests/test_docs.py:75` | P2 | 施工期文档 73 KB，被当作产品页做链接检查；阶段 5 后按 §14 归档 | 归档路径定在 `docs/exec-plans/completed/harness-<date>.md`；在文档门禁中显式排除归档目录 | 无 | 收官 | 未开始 |
+| TD-DOC-014 | 施工期规则文档（1,101 行）被 `docs/*.md` 门禁 glob 纳入产品文档检查 | `docs/turn-project-to-harness-rules.md`；`tests/test_docs.py:75` | P2 | 施工期文档 73 KB，被当作产品页做链接检查；阶段 5 后按 §14 归档 | 归档路径定在 `docs/exec-plans/completed/harness-<date>.md`；在文档门禁中显式排除归档目录 | 无 | 收官 | 已完成（§14 归档，2026-11-06；归档目录不再进产品页 glob） |
 | TD-DOC-015 | `CONTRIBUTING.md` 与未来 AGENTS/ARCHITECTURE 内容重叠 | `CONTRIBUTING.md:57-77`（Checks）、`:80-100`（Project layout） | P2 | 检查命令与目录地图将出现在 AGENTS.md；双份必然漂移 | AGENTS.md 作为唯一入口，CONTRIBUTING 链接过去；保留人类贡献流程细节 | 无 | B0 | 处理中（CONTRIBUTING 已指向 AGENTS；内容去重留阶段 4） |
 | TD-DOC-016 | 缺 `prompt-history.txt`（规则 §6.3）且 `.gitignore` 未忽略 | 仓库根；`.gitignore` | P2 | 文件不存在；`.gitignore` 无条目 | 阶段 2 按 D6 决策启用：创建文件、加 `.gitignore`、AGENTS 不引用 | 无 | B0 | 已完成（阶段 2，2026-11-06） |
 | TD-DOC-017 | 无 Markdown/外链/文档新鲜度 CI | `ci.yml`（无 markdown 步骤） | P2 | 唯一文档门禁是 6 个 pytest 用例 | 阶段 3 加 markdownlint + 外链定期检查 + 文档园丁任务说明 | 无 | 阶段 3 | 未开始 |
@@ -201,5 +201,5 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-META-001 | 规则文档施工期常驻，竣工后必须按 §14 拆解归档 | `docs/turn-project-to-harness-rules.md`（1,101 行 / 73 KB） | P2 | 规则 §14；当前全文常驻 docs/ | 阶段 5 验收后单独提交：一次性流程归档 `docs/exec-plans/completed/harness-<date>.md`，长效契约抽进 AGENTS/core-beliefs/ARCHITECTURE | 无 | 收官；H 确认 | 未开始 |
+| TD-META-001 | 规则文档施工期常驻，竣工后必须按 §14 拆解归档 | `docs/turn-project-to-harness-rules.md`（1,101 行 / 73 KB） | P2 | 规则 §14；当前全文常驻 docs/ | 阶段 5 验收后单独提交：一次性流程归档 `docs/exec-plans/completed/harness-<date>.md`，长效契约抽进 AGENTS/core-beliefs/ARCHITECTURE | 无 | 收官；H 确认 | 已完成（§14，2026-11-06：蓝图归档，长效契约迁移） |
 | TD-META-002 | 机械扫描只覆盖 `src/`，tests/scripts/docs 未纳入 | `scripts/analysis/scan_metrics.py` | P2 | 脚本 `iter_py(PKG)` 仅 `src/eye_tracker`；测试大文件也超阈值但未进报告 | 扩展扫描范围与阈值分组；基线快照纳入阶段 4 对比 | 无 | B0 | 未开始 |

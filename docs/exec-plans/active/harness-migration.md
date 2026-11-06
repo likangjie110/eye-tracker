@@ -7,8 +7,8 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06）；阶段 4 进行中（B1、B2 完成；B3 进行中；B7 已开始并关闭 CI 唯一 P1）。决策结果见 §6.1。
-- 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
+- 状态：**已完成**（2026-11-06）：阶段 1–5 验收通过，§14 收官拆解已归档；剩余存量债务按台账排期继续。决策结果见 §6.1。
+- 规则来源：已按 §14 归档至 `docs/exec-plans/completed/harness-2026-11-06.md`（原施工图，v1.0）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
   `docs/exec-plans/active/audits/`（三路审计与机械扫描的原始报告归档）
@@ -558,7 +558,7 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 7 | 提交历史可追溯 | ✅ | 计划进度日志逐条对应 commit（扫描→文档→门禁→B1–B7→阶段 5）；`git log --oneline` |
 | 8 | 框架判定与 CI 决策已落盘且与用户回答一致 | ✅ | `docs/CI.md`：框架=其他（非 Tauri，证据明确）；D11=tag 直接正式发布；D12 GitHub 设置待用户侧确认 |
 | 9 | 仅凭仓库可理解并安全改动 | ✅ | AGENTS → ARCHITECTURE → docs 的入口链；`tests/test_docs.py` 校验包覆盖/index 完整性 |
-| 10 | §14 收官拆解完成 | ⏳ 下一步 | 本轮完成后执行：归档蓝图至 `docs/exec-plans/completed/harness-rules-blueprint.md`，移除 `docs/turn-project-to-harness-rules.md` 并做脱离自检 |
+| 10 | §14 收官拆解完成 | ✅ | `git mv` → `docs/exec-plans/completed/harness-2026-11-06.md`（含归档头）；引用全部改指新路径；core-beliefs §11 固化 R1–R8 与熵管理；脱离自检：仅凭 AGENTS/core-beliefs/ARCHITECTURE/CI.md + 门禁即可遵守全部硬约束 |
 
 > 第 10 条是唯一未完成项；执行完 §14 后本表全部 ✅，迁移结束。
 
@@ -675,4 +675,5 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 5 | P5-1/P5-2/P5-4：pytest-cov 基线 89%（floor 门禁 + ratchet）；check.py pytest 带覆盖率；CI 单矩阵项执行 | 待提交 | 关闭「覆盖率目标与团队成本」遗留；UI 密度补测继续 |
 | 2026-11-06 | 阶段 4 · B4 | 步骤 1：camera 拆出 camera_devices（205），camera 708→568；测试 seam 改指新模块 | `58e3743` | 行为不变；CI 见本轮汇总 |
 | 2026-11-06 | 阶段 4 · B5 | model/calibration/store 三拆（model 959→429+191+361；calibration 670→418+329；store 731→522+322）；B6 核对无需拆分 | `a85eeb7` | 行为不变（测试未改，仅 seam）；所有文件 <600 行 |
+| 2026-11-06 | 阶段 5 · §14 | 蓝图归档为 `completed/harness-2026-11-06.md`；R1–R8/熵管理进 core-beliefs §11；引用与索引更新 | 单独 docs 提交 | §11.1 十项全 ✅；移除自检通过 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |

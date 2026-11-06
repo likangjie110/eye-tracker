@@ -25,7 +25,7 @@ A refactor that changes behaviour is a feature change in disguise. The two never
 Before a module that decides anything is restructured, its current behaviour is pinned with tests
 (characterization), and the tests stay unchanged through the refactor.
 
-Evidence: `docs/turn-project-to-harness-rules.md` red lines R1/R2; the batch rules in
+Evidence: red lines R1/R2 in §11 below; the batch rules in
 `docs/exec-plans/active/harness-migration.md` §4.
 
 ## 3. Pure logic is testable logic
@@ -98,3 +98,27 @@ agent. Plans, debt, decisions, checks and the reasons behind them live in the re
 versioned text.
 
 Evidence: this directory, `docs/exec-plans/`, `docs/CI.md`, `AGENTS.md`.
+
+## 11. Rules that outlive the migration
+
+The harness migration's construction blueprint is archived at
+`docs/exec-plans/completed/harness-2026-11-06.md`; these rules stay here because they constrain
+everyday work.
+
+**Refactoring red lines** (all batches were held to them, and review should keep holding them):
+
+- **R1 Preserve behaviour.** A refactor does not change behaviour; tests pin it before and stay
+  unchanged through it.
+- **R2 Separate behaviour changes.** Bug fixes and feature changes are marked in the tracker and
+  committed separately.
+- **R3 Guard first.** A module without tests/gates gets protection before it is restructured.
+- **R4 No out-of-scope optimisation.** New findings go into the tracker, not into the same commit.
+- **R5 Never silently delete.** Uncertain content is marked "to verify" and tracked, not removed.
+- **R6 No opaque dependencies.** Prefer composable, stable, inspectable dependencies.
+- **R7 No hidden information.** Decisions live in the repository, not in a chat or a memory.
+- **R8 Every step is reversible.** Each batch records its rollback in the plan.
+
+**Entropy control.** Periodically run background tasks that (1) scan for deviations from these
+beliefs, (2) refresh `docs/QUALITY_SCORE.md` from the latest evidence, (3) open small, targeted
+refactor PRs, and (4) run the doc-gardening pass that fixes stale docs and links. Most such PRs
+should be reviewable in a minute.

@@ -50,7 +50,7 @@ Every document in this repository, with its status and audience. Status means:
 | [`exec-plans/tech-debt-tracker.md`](exec-plans/tech-debt-tracker.md) | known debt, each with evidence, severity and acceptance | construction |
 | [`exec-plans/active/audits/README.md`](exec-plans/active/audits/README.md) | the phase-1 audits: CI, tests/docs, security, scan output | construction |
 | [`exec-plans/completed/README.md`](exec-plans/completed/README.md) | archived plans (empty until phase 5) | archived |
-| [`turn-project-to-harness-rules.md`](turn-project-to-harness-rules.md) | the construction blueprint that drives the migration | construction |
+| [`harness-2026-11-06.md`](exec-plans/completed/harness-2026-11-06.md) | archived construction blueprint of the completed harness migration | archived |
 
 ## How to keep this file honest
 
