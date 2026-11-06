@@ -11,12 +11,12 @@ Scale: **1** = fragile, change at your own risk; **2** = fragile with tests/fake
 (size/coupling of the change surface), **Deps** (dependency direction clean), **Gate** (mechanical
 checks that fail on drift).
 
-Snapshot: 2026-11-06, `harnessing` branch, code `v0.3.0` + phases 1–3, B1 and B2 complete.
+Snapshot: 2026-11-06, `harnessing` branch, code `v0.3.0` + phases 1–3, B1–B6 (B4 partially).
 
 | Domain (packages) | Tests | Docs | Complexity | Deps | Gate | Overall | Biggest gap |
 |---|---:|---:|---:|---:|---:|---:|---|
-| vision (`vision/`) | 4 | 4 | 2 | 4 | 3 | **3.4** | `facemesh_backend.py` 1,454 lines; `process` 25 decision points (TD-CPLX-006); face-photo tests never run in CI (TD-TEST-012) |
-| gaze (`gaze/`) | 5 | 4 | 3 | 5 | 3 | **4.0** | `GazeModel.from_dict` 27 decision points (TD-CPLX-011); no coverage numbers (TD-TEST-001) |
+| vision (`vision/`) | 4 | 4 | 3 | 4 | 4 | **3.8** | `facemesh_backend.py` 1,454 lines and `VisionWorker` 701 lines remain (TD-CPLX-006/015); face-photo tests never run in CI (TD-TEST-012) |
+| gaze (`gaze/`) | 5 | 4 | 4 | 5 | 4 | **4.4** | model/store/calibration split (every file <600); `GazeModel.from_dict` 27 decision points (TD-CPLX-011); 89 % coverage gate |
 | engine, pure rules (`engine/` minus controller) | 5 | 4 | 3 | 5 | 3 | **4.0** | three `update()` state machines 87–108 lines (TD-CPLX-009) |
 | orchestration (`engine/controller.py`, `app.py`, `ipc.py`) | 3 | 5 | 1 | 3 | 3 | **3.0** | controller 3,429 lines / 155 methods (TD-CPLX-001); B1 removed the app↔cli cycle and the UI→controller import |
 | platform (`platform/`) | 4 | 4 | 4 | 4 | 3 | **3.8** | B2 complete: every OS backend is a facade + binding/policy modules; `LinuxPlatform` / `MacPlatform` classes still large; real native paths only on their OS |

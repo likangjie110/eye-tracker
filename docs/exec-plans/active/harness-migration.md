@@ -528,6 +528,23 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 - 剩余 B3：`SettingsDialog` 类本身仍约 1,350 行（按页签拆子组件/presenter，TD-CPLX-002）；
   `CalibrationWindow` 类约 850 行；`ui/tray.py`（702）待拆；补 UI 测试密度。
 
+**阶段 4 进度（B4 / B5 / B6，2026-11-06）**
+
+- **B4 步骤 1（vision）** `58e3743`：`vision/camera.py` 708 → 568 行；低层采集/设备发现移入
+  `vision/camera_devices.py`（205 行：API/FOURCC、帧校验、`_imread`、`CameraError`/
+  `CameraInfo`、`device_index`/`_v4l2_index`/`list_cameras`）。camera 再导出全部名字，调用方与
+  测试入口不变；`_resolve_link` 的 patch seam 改指 camera_devices。
+- **B5（gaze）** `a85eeb7`：三个超限文件按职责拆分——
+  `model.py` 959 → 429 + `model_common.py`（191：常量/AwayRegion/线性估计）+
+  `model_selection.py`（361：alpha/degree 选择与 LOPO）；
+  `calibration.py` 670 → 418 + `calibration_eval.py`（329：evaluate/等级/轴误差）；
+  `store.py` 731 → 522 + `store_docs.py`（322：JSON 文档读写与校验）。
+  三者都保留 `__all__` 再导出，既有 import/patch 与断言不变。
+- **B6（panes）**：核对后 `panes/decider.py` 434、`worker.py` 311、`registry.py` 215 均低于
+  600 行阈值，最大类 218 行；本批无需拆分，记录为“已核对、无需改动”。
+- B4 剩余：`vision/worker.py`（777 行，`VisionWorker` 701 行）与
+  `facemesh_backend.py`（1,454 行，TD-CPLX-006），已登记 TD-CPLX-015。
+
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
 
@@ -639,4 +656,6 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 | 2026-11-06 | 阶段 4 · B7 | 步骤 1：release.yml 增加 test job（build needs test）；build.yml prepare 校验 tag 在 main 祖先 + numeric 版本；guard 测试 | `43f0342` | 关闭 CI 审计唯一 P1（TD-CI-001）与 TD-CI-003；发布方式仍为直接正式发布；CI run `42166713950` 绿 |
 | 2026-11-06 | 阶段 4 · B7 | 步骤 2：`tests/test_update_winhttp.py` 16 个用例，fake WinHTTP 覆盖调用序列/选项/头解析/分块读取/全部失败路径 | 待提交 | 关闭 TD-TEST-002（唯一网络代码零行为测试） |
 | 2026-11-06 | 阶段 5 | P5-1/P5-2/P5-4：pytest-cov 基线 89%（floor 门禁 + ratchet）；check.py pytest 带覆盖率；CI 单矩阵项执行 | 待提交 | 关闭「覆盖率目标与团队成本」遗留；UI 密度补测继续 |
+| 2026-11-06 | 阶段 4 · B4 | 步骤 1：camera 拆出 camera_devices（205），camera 708→568；测试 seam 改指新模块 | `58e3743` | 行为不变；CI 见本轮汇总 |
+| 2026-11-06 | 阶段 4 · B5 | model/calibration/store 三拆（model 959→429+191+361；calibration 670→418+329；store 731→522+322）；B6 核对无需拆分 | `a85eeb7` | 行为不变（测试未改，仅 seam）；所有文件 <600 行 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
