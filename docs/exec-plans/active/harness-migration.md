@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 已落地 5 个重构步骤）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 5 个步骤、B2 1 个步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -464,6 +464,19 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 - 剩余 B1：`Controller` 类本身（2,751 行）继续按协作对象拆分（相机/会话生命周期、
   校准流程编排、模式变更展示），`app.py` / `ipc.py` 的窗口与单实例职责整理。作为下一轮继续。
 
+**阶段 4 进度（B2，2026-11-06）**
+
+- **步骤 1（热键模块拆分）** `352096a`：`platform/hotkeys.py` 2,740 行拆为
+  `hotkeys_base.py`（823 行：解析/Hotkey/管理器基类）、`hotkeys_x11.py`（698 行：X11 后端）
+  与 facade `hotkeys.py`（1,297 行：Windows/macOS 后端 + Wayland 提示 + 工厂）。
+  facade 再导出公共名字与 `X11HotkeyManager`，`create_hotkey_manager` 与所有导入方不变；
+  测试的私有 seam 改指真实模块，断言不变。CI run
+  [42158144442](https://github.com/likangjie110/eye-tracker/actions/runs/42158144442) 全绿。
+- 配套：大小门禁新增“搬移识别”（同 qualname 消失于旧路径 → 允许基线转移；歧义仍失败），
+  避免拆分把旧债务误报成新债务。
+- 剩余 B2：Windows（~1.3k 行）与 macOS（~1k 行）后端继续拆出；随后处理
+  `platform/linux.py`、`windows.py`、`macos.py`、`autostart.py` 的大文件与错误路径测试。
+
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
 
@@ -549,4 +562,5 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 4 · B1 | 步骤 3：controller 支撑层（指针/worker 协议、QtCursor、monitor 重认、视觉工厂）移入 `controller_support.py`；新增 15 个直接特征测试 | `18ada68` | 行为不变（seam 名从 controller 仍可 import）；controller.py 3418→3165；CI run `42156071025` 绿 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 4：热键注册规则移入 `engine/hotkey_setup.py`；新增 9 个直接测试；结构测试忽略 TYPE_CHECKING 类型 import | `9b1ea54` | 行为不变（HOTKEY_ACTIONS 仍从 controller 可 import）；controller.py 3165→3114，类 2845→2795；CI run `42156669587` 绿 |
 | 2026-11-06 | 阶段 4 · B1 | 步骤 5：状态派生/定时/最大人脸/打断判定与校准选择移入 `controller_policy.py` / `calibration_select.py`；新增 29 个直接测试 | `6b93521` | 行为不变（方法委托纯函数）；controller.py 3114→3073，类 2795→2751；CI run `42157322029` 绿 |
+| 2026-11-06 | 阶段 4 · B2 | 步骤 1：hotkeys 拆为 base（823 行）+ X11 后端（698 行）+ facade（2740→1297 行）；门禁增加“搬移识别” | `352096a` | 行为不变（公共入口与工厂不变，断言未改）；CI run `42158144442` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
