@@ -77,7 +77,6 @@ pull request which violates them.
 | `engine/controller.py` and `controller_support.py` import PySide6, `panes/`, `platform/`, `vision/` | they are the orchestrator seams, and `engine/` is where they grew | TD-CPLX-001, TD-ARCH-001 |
 | `diagnostics.py` → `platform/hotkeys.py`, `engine/scheduler.py` | a diagnostic report deliberately aggregates every layer | TD-ARCH-002 |
 | `ui/settings_status.py` → `diagnostics.py` (lazy import for the doctor text) | the dialog shows the system report | TD-ARCH-002 |
-| `update/fetch.py` ↔ `update/winhttp.py` (lazy import) | transport protocol lives in `fetch.py` | TD-ARCH-006 |
 
 Phase 4 removed the former `app ↔ cli`, `platform → cli` and `ui → cli` exceptions: the
 command-line naming helpers now live in the dependency-free `command_text.py`, which every layer

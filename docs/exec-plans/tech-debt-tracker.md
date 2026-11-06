@@ -45,8 +45,7 @@
 | TD-ARCH-003 | 无机械依赖方向约束 | 全仓（无 `tests/test_architecture.py`，无 import-linter 配置） | P1 | `CONTRIBUTING.md:17-21` 用文字规定“纯逻辑不得 import Qt/OpenCV”；无测试/CI 检查；例外只靠代码注释（如 `hotkeys.py:2701` 的 “the cli module imports nothing from here”） | 阶段 3 加结构测试：模块→允许层的白名单 + 现有例外清单（只减不增）；报错信息给出目标层与替代方案 | 无 | B0/阶段 3；注入违规必须失败 | 已完成（阶段 3，2026-11-06） |
 | TD-ARCH-004 | 适配器反向依赖 CLI：`platform/hotkeys.py` → `cli` | `platform/hotkeys.py:2685` | P2 | `from ..cli import cli_command_text`，只为生成快捷键提示文案；platform 层因此依赖表示/入口层 | 把 `cli_command_text` 移到 `types`/`paths` 或由调用方传入；结构测试禁止 platform→cli | 无 | B2；结构测试断言 | 已完成（阶段 4 B1，2026-11-06） |
 | TD-ARCH-005 | UI 反向依赖 CLI：settings/tray → `cli.cli_command_text` | `ui/settings_dialog.py:68`、`ui/tray.py:23` | P2 | UI 为了展示命令文本 import CLI 模块；加深 ui→cli→app→ui 环 | 同 TD-ARCH-004：文案生成下沉到无依赖的小模块 | 无 | B3；结构测试断言 | 已完成（阶段 4 B1，2026-11-06） |
-| TD-ARCH-006 | `update.fetch` ↔ `update.winhttp` lazy 循环 | `update/fetch.py:76`；`update/winhttp.py` | P2 | fetch 在函数内 import winhttp（默认 transport），winhttp 反向 import fetch 的类型/常量；SCC 2 模块 | 抽 `update/transport.py` 放协议与异常类型，两侧单向依赖 | 无 | B7；SCC 消失 | 未开始 |
-
+| TD-ARCH-006 | `update.fetch` ↔ `update.winhttp` lazy 循环 | `update/fetch.py:76`；`update/winhttp.py` | P2 | fetch 在函数内 import winhttp（默认 transport），winhttp 反向 import fetch 的类型/常量；SCC 2 模块 | 抽 `update/transport.py` 放协议与异常类型，两侧单向依赖 | 无 | B7；SCC 消失 | 已完成（2026-11-06：NetworkError/Cancelled 下沉 update/errors.py，fetch↔winhttp 环消失，结构测试 ALLOWED_CYCLES 清空） |
 ## CPLX · 复杂度
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |

@@ -28,7 +28,7 @@ from ctypes import wintypes
 from typing import Any
 
 from .. import REPO_URL, __version__
-from .fetch import NetworkError
+from .errors import NetworkError
 
 USER_AGENT = f"EyeTracker/{__version__} (+{REPO_URL})"
 

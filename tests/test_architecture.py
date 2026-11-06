@@ -74,9 +74,7 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
 }
 
 #: Module-level cycles that exist today (frozen). New cycles fail; shrinking is allowed.
-ALLOWED_CYCLES: list[frozenset[str]] = [
-    frozenset({"eye_tracker.update.fetch", "eye_tracker.update.winhttp"}),
-]
+ALLOWED_CYCLES: list[frozenset[str]] = []
 
 PURE_MODULES = (
     "eye_tracker.gaze.",

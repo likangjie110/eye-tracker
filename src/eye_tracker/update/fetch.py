@@ -23,6 +23,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from .errors import Cancelled, NetworkError
+
 #: The hosts a request, or a redirect of one, may go to.
 ALLOWED_HOSTS: frozenset[str] = frozenset(
     {
@@ -41,14 +43,6 @@ MIN_RATE_BYTES_S = 8 * 1024
 RATE_WINDOW_S = 30.0
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
 _HTTPS = re.compile(r"^https://([A-Za-z0-9.-]+)(/[^\s#]*)?$")
-
-
-class NetworkError(OSError):
-    """A request that failed or was refused (the message is meant for the user)."""
-
-
-class Cancelled(Exception):
-    """The user cancelled a download."""
 
 
 class Response(Protocol):
