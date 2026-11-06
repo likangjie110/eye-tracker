@@ -21,7 +21,7 @@ Snapshot: 2026-11-06, `harnessing` branch, code `v0.3.0` + phases 1–3, B1–B6
 | orchestration (`engine/controller.py`, `app.py`, `ipc.py`) | 3 | 5 | 1 | 3 | 3 | **3.0** | controller 3,429 lines / 155 methods (TD-CPLX-001); B1 removed the app↔cli cycle and the UI→controller import |
 | platform (`platform/`) | 4 | 4 | 4 | 4 | 3 | **3.8** | B2 complete: every OS backend is a facade + binding/policy modules; `LinuxPlatform` / `MacPlatform` classes still large; real native paths only on their OS |
 | panes (`panes/`) | 4 | 4 | 4 | 3 | 3 | **3.6** | `panes.decider → engine.reading` (TD-ARCH-001); duplicated guard (TD-DUP-001) |
-| UI (`ui/`) | 2 | 3 | 1 | 3 | 3 | **2.4** | 25.2 tests/1k lines (others 74–133); `settings_dialog.py` 2,029 / `calibration_window.py` 1,766 lines; B1 removed UI→cli and UI→controller |
+| UI (`ui/`) | 3 | 3 | 2 | 3 | 3 | **2.8** | 19 direct helper tests added (phase 5); `settings_dialog.py` 1,520 / `calibration_window.py` 997 lines; the two remaining large classes are tracked (TD-CPLX-002/005) |
 | update and release (`update/`, `packaging/`, `.github/`) | 4 | 4 | 4 | 4 | 4 | **4.0** | `winhttp.py` zero behaviour tests (TD-TEST-002); unsigned installer execution (TD-SEC-001); release not test-gated (TD-CI-001) |
 | repository and docs (root, `docs/`, `scripts/`, `tests/`) | 4 | 4 | 4 | 4 | 4 | **4.0** | no coverage gate, no structural tests, no pre-commit (TD-TEST-001/014/015, TD-CI-018) |
 

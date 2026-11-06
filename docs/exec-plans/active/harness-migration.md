@@ -545,6 +545,23 @@ windows 1,339 → 11 + 2 模块；linux 2,528 → 1,100 + 5 模块；macos 1,230
 - B4 剩余：`vision/worker.py`（777 行，`VisionWorker` 701 行）与
   `facemesh_backend.py`（1,454 行，TD-CPLX-006），已登记 TD-CPLX-015。
 
+### §11.1 完成定义自检（2026-11-06）
+
+| # | 条目 | 状态 | 证据路径 |
+|---|---|---|---|
+| 1 | `AGENTS.md` 是地图而非百科 | ✅ | `AGENTS.md`（~130 行）；`tests/test_docs.py` 的 AGENTS 行数/链接检查 |
+| 2 | `docs/` 记录系统完整且版本化 | ✅ | `docs/index.md`、`docs/design-docs/`、`docs/exec-plans/`（计划/台账/审计/决策）、`docs/QUALITY_SCORE.md`、`docs/CI.md` |
+| 3 | 门禁机械可执行 | ✅ | `scripts/check.py` 本地 11/11；CI 6 job（含覆盖率步骤）；`tests/test_architecture.py`、`tests/test_docs.py`、`scripts/lint_size.py` |
+| 4 | 不变量有自动检查且实测可拦截 | ✅ | 负例表见 `docs/CI.md` §4.3；隐私门有注入用例；大小/结构/文档/覆盖率负例已实测失败 |
+| 5 | P0 全关，P1 有明确排期 | ✅ | 台账 P0=0；剩余 P1 均写有排期批次/条件（B1/B3/B4/B6、D14 证书）+ 阶段 4 收尾说明 |
+| 6 | 覆盖率达标，关键路径有回归 | ✅ | 基线 89 %，`fail_under=89` ratchet；切换/校准/更新（含 winhttp 16 例）/隐私均有回归测试 |
+| 7 | 提交历史可追溯 | ✅ | 计划进度日志逐条对应 commit（扫描→文档→门禁→B1–B7→阶段 5）；`git log --oneline` |
+| 8 | 框架判定与 CI 决策已落盘且与用户回答一致 | ✅ | `docs/CI.md`：框架=其他（非 Tauri，证据明确）；D11=tag 直接正式发布；D12 GitHub 设置待用户侧确认 |
+| 9 | 仅凭仓库可理解并安全改动 | ✅ | AGENTS → ARCHITECTURE → docs 的入口链；`tests/test_docs.py` 校验包覆盖/index 完整性 |
+| 10 | §14 收官拆解完成 | ⏳ 下一步 | 本轮完成后执行：归档蓝图至 `docs/exec-plans/completed/harness-rules-blueprint.md`，移除 `docs/turn-project-to-harness-rules.md` 并做脱离自检 |
+
+> 第 10 条是唯一未完成项；执行完 §14 后本表全部 ✅，迁移结束。
+
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
 

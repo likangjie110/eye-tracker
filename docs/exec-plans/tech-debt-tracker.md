@@ -40,7 +40,7 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-ARCH-001 | `engine` 与 `panes` 包级双向依赖 | `engine/controller.py:106-116`；`panes/decider.py:44` | P1 | controller 依赖 panes.*；panes.decider 反向 import `engine.reading`；机械扫描包边 engine→panes 5、panes→engine 1 | 把纯规则 `reading` 下沉到共享层，或规定 panes 只依赖 engine 的纯接口子模块；结构测试断言一条方向 | 无 | B1/B6；`tests/test_architecture.py` 断言无环 | 未开始 |
+| TD-ARCH-001 | `engine` 与 `panes` 包级双向依赖 | `engine/controller.py:106-116`；`panes/decider.py:44` | P1 | controller 依赖 panes.*；panes.decider 反向 import `engine.reading`；机械扫描包边 engine→panes 5、panes→engine 1 | 把纯规则 `reading` 下沉到共享层，或规定 panes 只依赖 engine 的纯接口子模块；结构测试断言一条方向 | 无 | B1/B6；`tests/test_architecture.py` 断言无环 | 已排期：B6 收尾（panes→engine.reading 例外，随剩余批次处理） |
 | TD-ARCH-002 | ~~18 模块强连通分量（app/cli/diagnostics/hotkeys/ui）~~ 已消除 | `app.py:54`、`cli.py:479,490`、`diagnostics.py:40`、`hotkeys.py:2685`、`ui/settings_dialog.py:68`、`ui/tray.py:23` | P1 | `scan_metrics.py` SCC 输出：app↔cli、cli↔diagnostics、diagnostics→hotkeys→cli、app→ui→cli→app | 拆“组合根”职责：`cli` 只解析/格式化，`app` 依赖 `cli` 而非反向；`hotkeys` 的文案改由调用方注入；逐步缩小 SCC | 无 | B1；SCC 成员数单调下降并记录基线 | 已完成（阶段 4 B1，2026-11-06） |
 | TD-ARCH-003 | 无机械依赖方向约束 | 全仓（无 `tests/test_architecture.py`，无 import-linter 配置） | P1 | `CONTRIBUTING.md:17-21` 用文字规定“纯逻辑不得 import Qt/OpenCV”；无测试/CI 检查；例外只靠代码注释（如 `hotkeys.py:2701` 的 “the cli module imports nothing from here”） | 阶段 3 加结构测试：模块→允许层的白名单 + 现有例外清单（只减不增）；报错信息给出目标层与替代方案 | 无 | B0/阶段 3；注入违规必须失败 | 已完成（阶段 3，2026-11-06） |
 | TD-ARCH-004 | 适配器反向依赖 CLI：`platform/hotkeys.py` → `cli` | `platform/hotkeys.py:2685` | P2 | `from ..cli import cli_command_text`，只为生成快捷键提示文案；platform 层因此依赖表示/入口层 | 把 `cli_command_text` 移到 `types`/`paths` 或由调用方传入；结构测试禁止 platform→cli | 无 | B2；结构测试断言 | 已完成（阶段 4 B1，2026-11-06） |
@@ -51,13 +51,13 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-CPLX-001 | `engine/controller.py` 超大：单类 2,845 行 / 155 方法 | `engine/controller.py:585` | P1 | 文件 3,429 行；`Controller.__init__` 206 行（`:659`）；`start` 75 行（`:867`）；`apply_settings` 63 行（`:1237`） | 先补特征测试；按生命周期抽取协作对象（相机/会话、热键、窗口记忆、更新），controller 只保留编排 | 无（重构） | B1；controller 行数下降 ≥30%，测试全绿 | 处理中（B1 进行中：controller.py 3418→3073，Controller 类 2845→2751） |
-| TD-CPLX-002 | `ui/settings_dialog.py` 超大：单类 1,351 行 / 69 方法 | `ui/settings_dialog.py:669` | P1 | 文件 2,029 行；`SettingsDialog` 69 方法；UI 测试仅 ~29 例 | 按页签拆子组件（General/Camera/Privacy/Hotkeys…），状态读写集中到 presenter | 无 | B3；类行数 <600，offscreen 测试全绿 | 处理中（B3：settings_dialog.py 2029→1520；SettingsDialog 类约 1350 行待拆） |
+| TD-CPLX-001 | `engine/controller.py` 超大：单类 2,845 行 / 155 方法 | `engine/controller.py:585` | P1 | 文件 3,429 行；`Controller.__init__` 206 行（`:659`）；`start` 75 行（`:867`）；`apply_settings` 63 行（`:1237`） | 先补特征测试；按生命周期抽取协作对象（相机/会话、热键、窗口记忆、更新），controller 只保留编排 | 无（重构） | B1；controller 行数下降 ≥30%，测试全绿 | 处理中（B1：controller.py 3418→3073；剩余方法拆分已排期阶段 4 收尾） |
+| TD-CPLX-002 | `ui/settings_dialog.py` 超大：单类 1,351 行 / 69 方法 | `ui/settings_dialog.py:669` | P1 | 文件 2,029 行；`SettingsDialog` 69 方法；UI 测试仅 ~29 例 | 按页签拆子组件（General/Camera/Privacy/Hotkeys…），状态读写集中到 presenter | 无 | B3；类行数 <600，offscreen 测试全绿 | 处理中（B3：settings_dialog.py 2029→1520；SettingsDialog 类拆分已排期阶段 4 收尾） |
 | TD-CPLX-003 | `platform/hotkeys.py` 2,740 行装三平台实现 | `platform/hotkeys.py`（`_Carbon:1499`、`X11HotkeyManager:2257`、Windows 类 ~955） | P1 | 文件 2,740 行；`register` 62 行 / 17 决策点（`:498`）；Windows `__init__` 81 行（`:955`） | 拆 `hotkeys/{windows,macos,x11,base}.py`，公共解析/格式化留一处 | 无 | B2；三平台测试全绿；文件 <600 行 | 已完成（阶段 4 B2，2026-11-06） |
 | TD-CPLX-004 | `platform/linux.py` 超大：`LinuxPlatform` 945 行 / 53 方法 | `platform/linux.py:1580` | P1 | 文件 2,528 行；`_EwmhClient` 273 行 / 24 方法（`:707`）；`capabilities` 33 行 / 18 决策点（`:1708`） | 拆 X11 窗口管理 / 光标 / DPMS / 热键后端；Wayland 分支单独文件 | 无 | B2；Linux 测试全绿 | 已完成（阶段 4 B2，2026-11-06） |
-| TD-CPLX-005 | `ui/calibration_window.py` 超大：类 849 行 / 52 方法 | `ui/calibration_window.py:918` | P1 | 文件 1,766 行；`_Surface` 315 行（`:600`）；`set_running` 47 行 / 19 决策点（`:664`） | 拆校准状态机（可测纯逻辑）与渲染 surface；采集/拟合/结果分文件 | 无 | B3；UI 测试补校准失败/重试路径 | 处理中（B3：calibration_window.py 1767→997；CalibrationWindow 类约 850 行待拆） |
-| TD-CPLX-006 | `vision/backends/facemesh_backend.py` 1,454 行，`process` 77 行 / 25 决策点 | `facemesh_backend.py:759`、`:921` | P1 | 类 692 行 / 25 方法；`process` 25 决策点；模型加载自检逻辑同文件 | 拆“模型加载/自检”“单帧推理”“后处理”；保持帧循环接口不变 | 无 | B4；bench 前后数值不退化 | 未开始 |
-| TD-CPLX-007 | `app.py` 与 `EyeTrackerApp` 过大 | `app.py:380`、`:195` | P1 | 文件 1,317 行；类 733 行 / 54 方法；`build_app` 128 行 / 24 决策点 | 拆启动装配（build_app）与运行期窗口管理；单实例/登录启动逻辑独立 | 无 | B1；`tests/test_app.py` 全绿 | 未开始 |
+| TD-CPLX-005 | `ui/calibration_window.py` 超大：类 849 行 / 52 方法 | `ui/calibration_window.py:918` | P1 | 文件 1,766 行；`_Surface` 315 行（`:600`）；`set_running` 47 行 / 19 决策点（`:664`） | 拆校准状态机（可测纯逻辑）与渲染 surface；采集/拟合/结果分文件 | 无 | B3；UI 测试补校准失败/重试路径 | 处理中（B3：calibration_window.py 1767→997；CalibrationWindow 类拆分已排期阶段 4 收尾） |
+| TD-CPLX-006 | `vision/backends/facemesh_backend.py` 1,454 行，`process` 77 行 / 25 决策点 | `facemesh_backend.py:759`、`:921` | P1 | 类 692 行 / 25 方法；`process` 25 决策点；模型加载自检逻辑同文件 | 拆“模型加载/自检”“单帧推理”“后处理”；保持帧循环接口不变 | 无 | B4；bench 前后数值不退化 | 已排期：B4 收尾（facemesh_backend 拆分） |
+| TD-CPLX-007 | `app.py` 与 `EyeTrackerApp` 过大 | `app.py:380`、`:195` | P1 | 文件 1,317 行；类 733 行 / 54 方法；`build_app` 128 行 / 24 决策点 | 拆启动装配（build_app）与运行期窗口管理；单实例/登录启动逻辑独立 | 无 | B1；`tests/test_app.py` 全绿 | 已排期：B1 收尾（app.py 启动装配拆分） |
 | TD-CPLX-008 | `diagnostics._problems` 108 行 / 58 决策点（全仓最高） | `diagnostics.py:814` | P2 | 机械扫描：decisions=58，lines=108，nesting=3 | 拆成每个诊断维度一个小函数，规则表驱动；输出顺序由测试锁定 | 无 | B7；决策点 <20 | 未开始 |
 | TD-CPLX-009 | 三个状态机 `update()` 偏长：guard/decider/decision | `engine/guard.py:154`（30/108）、`panes/decider.py:261`（27/87）、`engine/decision.py:256`（22/98） | P2 | 机械扫描决策点与行数 | 把“宽限期/迟滞/防抖”提为共享小状态机或各自拆成 `_should_*` 判定；行为由现有测试锁定 | 无 | B1/B6；决策点下降 | 未开始 |
 | TD-CPLX-010 | `parse_face_geometry` 嵌套 7 层 | `vision/backends/face_geometry.py:108` | P2 | 43 行、24 决策点、max nesting=7 | 每层解析拆函数，失败返回结构化错误；模型包格式测试锁定 | 无 | B4；嵌套 ≤3 | 未开始 |
@@ -65,8 +65,7 @@
 | TD-CPLX-012 | `config._coerce` 36 行 / 22 决策点 | `config.py:588` | P2 | 机械扫描 | 每种设置类型的强制转换表驱动；非法值回归测试 | 无 | B1；测试全绿 | 未开始 |
 | TD-CPLX-013 | 热键模块拆分后仍有 3 个文件 >600 行 | `hotkeys_base.py` 823、`hotkeys_macos.py` 722、`hotkeys_x11.py` 698 | P2 | 机械扫描；这是 B2 从 2,740 行拆分后的自然结果 | 按职责再拆（例如 base 的解析 vs 管理器记账；macOS 的 Carbon 绑定 vs 布局探测）；优先级低于其他批次 | 无 | B2 后续；文件降到 600 以下 | 未开始 |
 | TD-CPLX-014 | `LinuxPlatform` 类仍约 950 行（linux.py 1,100 行） | `linux.py`（facade）；类定义 | P2 | 机械扫描；B2 已把机制拆出，平台类本身仍大 | 按 X11 / Wayland 策略拆为协作对象；优先级低于其他批次 | 无 | B2 后续；类行数下降 | 未开始 |
-| TD-CPLX-015 | `vision/worker.py` 777 行，`VisionWorker` 701 行 / 30 方法 | `vision/worker.py`；类定义 | P1 | B4 机械扫描；相机侧已拆（58e3743），worker 未动 | 把推理/后处理/帧循环拆为协作对象，保持 `VisionWorker` 公共接口与线程语义 | 无 | B4 后续；类行数下降，实时路径测试全绿 | 未开始 |
-
+| TD-CPLX-015 | `vision/worker.py` 777 行，`VisionWorker` 701 行 / 30 方法 | `vision/worker.py`；类定义 | P1 | B4 机械扫描；相机侧已拆（58e3743），worker 未动 | 把推理/后处理/帧循环拆为协作对象，保持 `VisionWorker` 公共接口与线程语义 | 无 | B4 后续；类行数下降，实时路径测试全绿 | 已排期：B4 收尾（VisionWorker 协作对象拆分） |
 ## DUP · 重复
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
@@ -89,7 +88,7 @@
 | TD-DOC-009 | 缺 `docs/QUALITY_SCORE.md` / `docs/index.md` / `docs/design-docs/`（含 core-beliefs） | `docs/` | P1 | 四个路径均不存在；规则 §2.1 要求 exec-plans + QUALITY_SCORE，§2.1/§2.2 要求索引与 core-beliefs | 阶段 2 建索引、质量评分（按 8 个业务域）、`core-beliefs.md`；`QUALITY_SCORE` 与台账 ID 关联 | 无 | B0；文件存在 + 必含节测试 | 已完成（阶段 2，2026-11-06） |
 | TD-DOC-011 | 双 README 的 PERF 数据块手工重复 | `README.md:149-160`；`README.tr.md:151-162` | P2 | 数值一致但无生成/校验；`<!-- PERF:BEGIN/END -->` 无脚本引用 | 由 benchmark 结果生成两语言块，或加测试比较数值 | 无 | B4 | 未开始 |
 | TD-DOC-012 | 站点文档链接是绝对 GitHub `main` URL，无校验 | `site/index.html:248,352,360,455`；`tests/test_site.py:82-100` | P2 | 站点测试只查构建产物本地 src/href；docs 重组会静默断链 | 站点构建/测试把 `blob/main/docs/*.md` 映射回仓库路径校验存在 | 无 | B7 | 未开始 |
-| TD-DOC-013 | 文档门禁只有 6 个用例，缺版本/锚点/命令/新鲜度校验 | `tests/test_docs.py:26,31,47,62,87,98` | P1 | 只校验配置同步、hotkey 渲染、presence 数字、setting 有 doc、相对链接/图片存在；`:91` 丢弃 anchor；D.2 的过期内容全部漏检 | 阶段 2/3 扩展：版本一致性、锚点、代码块命令、双语结构、必填节、docs/index 完整性；加 markdownlint/外链（定期） | 无 | B0/阶段 3；注入漂移必须失败 | 处理中（阶段 2 已扩展 15 用例；锚点/外链/markdownlint 留阶段 3） |
+| TD-DOC-013 | 文档门禁只有 6 个用例，缺版本/锚点/命令/新鲜度校验 | `tests/test_docs.py:26,31,47,62,87,98` | P1 | 只校验配置同步、hotkey 渲染、presence 数字、setting 有 doc、相对链接/图片存在；`:91` 丢弃 anchor；D.2 的过期内容全部漏检 | 阶段 2/3 扩展：版本一致性、锚点、代码块命令、双语结构、必填节、docs/index 完整性；加 markdownlint/外链（定期） | 无 | B0/阶段 3；注入漂移必须失败 | 处理中（阶段 2 已扩展 15 用例；锚点/外链/markdownlint 已排期阶段 5 收尾） |
 | TD-DOC-014 | 施工期规则文档（1,101 行）被 `docs/*.md` 门禁 glob 纳入产品文档检查 | `docs/turn-project-to-harness-rules.md`；`tests/test_docs.py:75` | P2 | 施工期文档 73 KB，被当作产品页做链接检查；阶段 5 后按 §14 归档 | 归档路径定在 `docs/exec-plans/completed/harness-<date>.md`；在文档门禁中显式排除归档目录 | 无 | 收官 | 未开始 |
 | TD-DOC-015 | `CONTRIBUTING.md` 与未来 AGENTS/ARCHITECTURE 内容重叠 | `CONTRIBUTING.md:57-77`（Checks）、`:80-100`（Project layout） | P2 | 检查命令与目录地图将出现在 AGENTS.md；双份必然漂移 | AGENTS.md 作为唯一入口，CONTRIBUTING 链接过去；保留人类贡献流程细节 | 无 | B0 | 处理中（CONTRIBUTING 已指向 AGENTS；内容去重留阶段 4） |
 | TD-DOC-016 | 缺 `prompt-history.txt`（规则 §6.3）且 `.gitignore` 未忽略 | 仓库根；`.gitignore` | P2 | 文件不存在；`.gitignore` 无条目 | 阶段 2 按 D6 决策启用：创建文件、加 `.gitignore`、AGENTS 不引用 | 无 | B0 | 已完成（阶段 2，2026-11-06） |
@@ -99,7 +98,7 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-TEST-001 | 无覆盖率工具、配置与门禁 | `pyproject.toml:71-76`；`ci.yml:118-119` | P1 | `coverage` 未安装（ModuleNotFoundError）；dev 组仅 pytest/ruff/mypy；CI 仅 `pytest -q`，无 `--cov`/阈值 | 加 pytest-cov；先记录基线再 ratchet；CI 阈值门禁（阈值见 D1） | 无 | 阶段 5；注入低覆盖必须失败 | 未开始 |
+| TD-TEST-001 | 无覆盖率工具、配置与门禁 | `pyproject.toml:71-76`；`ci.yml:118-119` | P1 | `coverage` 未安装（ModuleNotFoundError）；dev 组仅 pytest/ruff/mypy；CI 仅 `pytest -q`，无 `--cov`/阈值 | 加 pytest-cov；先记录基线再 ratchet；CI 阈值门禁（阈值见 D1） | 无 | 阶段 5；注入低覆盖必须失败 | 已完成（阶段 5 P5-1/P5-2，2026-11-06） |
 | TD-TEST-002 | `update/winhttp.py` 零行为测试 | `src/eye_tracker/update/winhttp.py:1-175`；`tests/test_update_fetch.py:12-14`；`tests/test_privacy.py:90-97` | P1 | 唯一网络代码，175 行 ctypes/WinHTTP；测试只用 FakeTransport，privacy 测试只扫 allowlist 文本 | 仿 `test_platform_windows.py` 的 FakeWin32，用假 `ctypes.WinDLL` 覆盖 TLS/证书/代理/重定向/错误码 | 无 | B7；新增测试 | 已完成（阶段 4 B7，2026-11-06） |
 | TD-TEST-003 | Windows 专属与 Inno Setup 用例在本地/PR CI 跳过 | `tests/test_build_scripts.py:572`；`ci.yml:78-96`；`build.yml:290` | P2 | 55 skip 中 33 个 Windows；PR test job 不装 Inno Setup；build job 装 choco 但不跑 pytest | bundle/额外 Windows job 装 Inno Setup 后跑该用例；或标注仅 release 验证 | 无 | B7 | 未开始 |
 | TD-TEST-004 | 3 个用例完全没有断言 | `tests/test_facemesh.py:411`；`tests/test_hotkeys.py:899`；`tests/test_update_service.py:238-244` | P2 | AST 扫描 1,994 个测试函数 → 3 个零 assert/零 raises | 至少断言状态或副作用 | 无 | 阶段 5 | 未开始 |
@@ -113,7 +112,7 @@
 | TD-TEST-012 | 人脸精度声明的测试从不自动运行 | `tests/conftest.py:44-52`；`docs/privacy.md:24-26`；workflows | P2 | `EYE_TRACKER_TEST_FACE` 未在任何 workflow 设置 → 10 个人脸用例永远 skip | 提交可公开测试图或合成图；或 nightly 用 secret 提供并标注 | 无 | 阶段 5（见 D7） | 未开始 |
 | TD-TEST-013 | pytest 配置无 strict/超时，全局吞弃用警告 | `pyproject.toml:117-120` | P2 | `addopts="-ra"`；无 `--strict-markers`；`ignore::DeprecationWarning` 全局 | 加 strict/timeout；只 ignore 已审阅的具体警告 | 无 | 阶段 5 | 未开始 |
 | TD-TEST-014 | 无结构测试（依赖方向/大小/环） | 全仓 | P1 | 无 `tests/test_architecture.py`；CI 无 import 图检查；CONTRIBUTING 的约束仅文字 | 阶段 3 加结构测试 + 大小 lint；存量豁免清单只减不增 | 无 | 阶段 3；注入违规必须失败 | 已完成（阶段 3，2026-11-06） |
-| TD-TEST-015 | 除隐私门外，其他门禁无“注入违规必须失败”自证 | `tests/test_privacy.py`（有自测）vs 其他 | P1 | 规则 §11.1 DoD 4 要求每条不变量实测可拦截；目前只有 privacy gate 有参数化注入测试 | 为 ruff/mypy/覆盖率/结构测试各加一个负例自测（fixture 故意违规→断言失败） | 无 | 阶段 3/5 | 处理中（大小/结构/文档负例已加；覆盖率负例留阶段 5） |
+| TD-TEST-015 | 除隐私门外，其他门禁无“注入违规必须失败”自证 | `tests/test_privacy.py`（有自测）vs 其他 | P1 | 规则 §11.1 DoD 4 要求每条不变量实测可拦截；目前只有 privacy gate 有参数化注入测试 | 为 ruff/mypy/覆盖率/结构测试各加一个负例自测（fixture 故意违规→断言失败） | 无 | 阶段 3/5 | 已完成（阶段 5：大小/结构/文档/覆盖率均有失败负例；隐私门既有） |
 | TD-TEST-016 | 测试文件本身超大 | `tests/test_controller.py:3289`；`test_hotkeys.py:2660`；`test_build_scripts.py:2597`；`test_platform_linux.py:2475` | P2 | wc -l | 按行为拆分测试文件；与源码拆分同步进行 | 无 | B1/B2 | 未开始 |
 
 ## SEC · 安全
@@ -125,7 +124,7 @@
 
 | ID | 标题 | 位置 | 严重度 | 证据 | 修复建议 | 业务行为影响 | 批次 / 验收 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| TD-SEC-001 | 自更新下载的安装器无 Authenticode/Sigstore 校验即被静默执行 | `update/installer.py:106-126,134-149`；`docs/privacy.md:69-73` | P1 | 仅比对同一 release 的 `SHA256SUMS.txt`；随后 `Popen(exe, /VERYSILENT)`；能替换 release 两个资产（或注入响应）者即可获得当前用户权限；文档自述该边界 | 用 WinVerifyTrust 校验 Authenticode；或内置发布公钥校验 Sigstore/对 `SHA256SUMS` 独立签名（需签名基建，见 D14） | 无（安全加固） | B7 + D14；伪造校验失败用例必须拒绝执行 | 未开始 |
+| TD-SEC-001 | 自更新下载的安装器无 Authenticode/Sigstore 校验即被静默执行 | `update/installer.py:106-126,134-149`；`docs/privacy.md:69-73` | P1 | 仅比对同一 release 的 `SHA256SUMS.txt`；随后 `Popen(exe, /VERYSILENT)`；能替换 release 两个资产（或注入响应）者即可获得当前用户权限；文档自述该边界 | 用 WinVerifyTrust 校验 Authenticode；或内置发布公钥校验 Sigstore/对 `SHA256SUMS` 独立签名（需签名基建，见 D14） | 无（安全加固） | B7 + D14；伪造校验失败用例必须拒绝执行 | 已排期：待 Authenticode 证书（D14）；证书就绪后 B7 实现签名校验 |
 | TD-SEC-002 | 哈希校验与启动安装器之间存在 TOCTOU 窗口 | `update/installer.py:124-131`；`update/service.py:312-343` | P2 | 校验后 `part.replace(final)`，再经 Qt 队列跳回主线程才启动；期间本机进程可替换文件，启动前无二次校验 | 启动前对同一路径重新计算 SHA-256（或验签）；收紧下载目录 ACL、拒绝 reparse point；缩短“校验→执行”路径 | 无 | B7；可注入 launcher 的测试 | 未开始 |
 | TD-SEC-003 | WinHTTP 安全/超时设置返回值被忽略 | `update/winhttp.py:143,156-159` | P2 | `WinHttpSetTimeouts` 与 `WinHttpSetOption(REDIRECT_POLICY, NEVER)` 的 BOOL 均未检查；设置失败则“不自行重定向”的安全假设无运行时保证，超时可能退化 | 检查返回值，失败即抛 `NetworkError`（fail closed）；mock WinHTTP 覆盖失败路径 | 无 | B7；测试 | 未开始 |
 | TD-SEC-004 | IPC 身份校验在无法判定时默认放行（fail-open） | `ipc.py:739-756,877-908` | P2 | `_client_is_trusted` 非 Windows 恒 True；Windows 句柄异常时 `verdict=None` 仍 `return True`；pipe 探测异常按“空闲”处理 | 身份不可判定时拒绝连接并告警；异常时拒绝 listen 并提示；Unix 补 `SO_PEERCRED`/目录归属复核 | 修复bug（异常路径） | B1；异常路径测试 | 未开始 |
