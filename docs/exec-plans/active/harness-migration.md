@@ -7,7 +7,7 @@
 - 远程：`origin` = `https://github.com/likangjie110/eye-tracker`（个人 fork）；`upstream` = `https://github.com/bugraskl/eye-tracker`（原仓库）
 - 分支：`harnessing`（从 `likangjie/lionfish` / `main` 同点切出，未动主干）
 - 计划版本 / 日期：v1 / 2026-11-06
-- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 5 个步骤、B2 2 个步骤）。决策结果见 §6.1。
+- 状态：**已确认**；阶段 1–3 已验收（2026-11-06），阶段 4 进行中（B1 5 个步骤、B2 3 个步骤）。决策结果见 §6.1。
 - 规则来源：`docs/turn-project-to-harness-rules.md`（v1.0，施工期常驻，竣工后按 §14 拆解归档）
 - 配套文件：`docs/exec-plans/tech-debt-tracker.md`（问题清单）、`docs/CI.md`（框架判定与 CI 现状）、
   `scripts/analysis/scan_metrics.py`（机械扫描脚本，可重复运行）、
@@ -481,7 +481,13 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
   [42158721245](https://github.com/likangjie110/eye-tracker/actions/runs/42158721245) 全绿。
 - 剩余（可选、已登记）：拆分后的 `hotkeys_base.py`（823 行）/ `hotkeys_macos.py`（722 行）/
   `hotkeys_x11.py`（698 行）仍超 600 行，可按职责再细拆（TD-CPLX-013）。
-- 剩余 B2：`platform/linux.py`、`windows.py`、`macos.py`、`autostart.py` 的大文件与错误路径测试。
+- **步骤 3（autostart 拆分）** `b8102ac`：`platform/autostart.py` 884 → 425 行，拆为
+  `autostart_common.py`（78）/`autostart_windows.py`（156）/`autostart_macos.py`（140）/
+  `autostart_linux.py`（158）；公共 API 与命令/配置档辅助仍在 facade，OS 调用改为模块限定，
+  测试的私有 helper 与 patch 目标改指真实模块，断言不变。CI run
+  [42159513393](https://github.com/likangjie110/eye-tracker/actions/runs/42159513393) 全绿。
+- 剩余 B2：`platform/linux.py`（2,528）、`windows.py`（1,339）、`macos.py`（1,230）的大文件
+  与错误路径测试。
 
 **阶段 4 验收**：每批提交均通过门禁；行为守恒有证据（测试 + 指标）；复杂度/重复度下降；
 进度日志逐条对应 commit。
@@ -570,4 +576,5 @@ P2-5/6/9 的剩余项（CONTRIBUTING 去重、锚点/外部链接检查）已登
 | 2026-11-06 | 阶段 4 · B1 | 步骤 5：状态派生/定时/最大人脸/打断判定与校准选择移入 `controller_policy.py` / `calibration_select.py`；新增 29 个直接测试 | `6b93521` | 行为不变（方法委托纯函数）；controller.py 3114→3073，类 2795→2751；CI run `42157322029` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 1：hotkeys 拆为 base（823 行）+ X11 后端（698 行）+ facade（2740→1297 行）；门禁增加“搬移识别” | `352096a` | 行为不变（公共入口与工厂不变，断言未改）；CI run `42158144442` 绿 |
 | 2026-11-06 | 阶段 4 · B2 | 步骤 2：Windows（510）/macOS（722）后端拆出，facade 2740→151 行；B2 完成 | `0ba5c64` | 行为不变（工厂/导入入口不变，断言未改）；CI run `42158721245` 绿 |
+| 2026-11-06 | 阶段 4 · B2 | 步骤 3：autostart 拆为 common + 三个 OS 模块（884→425 行 façade）；OS 调用改为模块限定，测试 seam 更新 | `b8102ac` | 行为不变（公共 API 与命令不变，断言未改）；autostart.py 退出 >600 行清单；CI run `42159513393` 绿 |
 | 2026-11-06 | 阶段 1 | 提交阶段 1 产出（不含业务代码） | `093cfaf` | 计划状态=待确认；等 H 确认并回答 D1–D17 后再进入阶段 2 |
